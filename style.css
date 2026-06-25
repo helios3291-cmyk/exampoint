@@ -400,6 +400,16 @@ header h1 {
   flex-wrap: wrap;
 }
 
+.bottom-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.bottom-actions .secondary-btn {
+  min-width: 9rem;
+}
+
 .editor-header h2 {
   margin-bottom: 0;
 }
@@ -577,7 +587,12 @@ th {
     width: 100%;
   }
 
-  .editor-actions .secondary-btn {
+  .editor-actions .secondary-btn,
+  .bottom-actions .secondary-btn {
     flex: 1;
+  }
+
+  .bottom-actions {
+    width: 100%;
   }
 }

@@ -1,6 +1,9 @@
 const TIER_ORDER = ["상", "중", "하"];
+const DISPLAY_TIER_ORDER = ["하", "중", "상"];
 const TIER_KEYS = { 상: "high", 중: "mid", 하: "low" };
-const WITHIN_INTERVAL = 0.1;
+const CHOICE_SCORE_INTERVAL = 0.1;
+const WRITTEN_SCORE_INTERVAL = 1;
+const WRITTEN_BETWEEN_GAP = 1;
 const TOTAL_SCORE = 100;
 
 const VARIANT_PROFILES = [
@@ -19,6 +22,14 @@ const state = {
 
 function round1(n) {
   return Math.round(n * 10) / 10;
+}
+
+function roundToInterval(n, interval) {
+  return round1(Math.round(n / interval) * interval);
+}
+
+function formatPoint(point) {
+  return Number.isInteger(point) ? String(point) : point.toFixed(1);
 }
 
 function readTierCounts(prefix) {
@@ -57,6 +68,7 @@ function readInputs() {
       anchor2: readOptionalPoint("anchor2"),
       groupCounts: readGroupCounts("group"),
       betweenGap: parseFloat(document.getElementById("between-gap").value),
+      scoreInterval: CHOICE_SCORE_INTERVAL,
     },
   ];
 
@@ -70,7 +82,8 @@ function readInputs() {
       anchor1: parseFloat(document.getElementById("written-anchor1").value),
       anchor2: readOptionalPoint("written-anchor2"),
       groupCounts: readGroupCounts("written-group"),
-      betweenGap: parseFloat(document.getElementById("written-between-gap").value),
+      betweenGap: WRITTEN_BETWEEN_GAP,
+      scoreInterval: WRITTEN_SCORE_INTERVAL,
     });
   }
 
@@ -193,7 +206,7 @@ function distributeQuestionCounts(questionCount, numGroups, distribution) {
   return counts;
 }
 
-function generateTierGroups(maxPoint, questionCount, groupCount, distribution) {
+function generateTierGroups(maxPoint, questionCount, groupCount, distribution, scoreInterval) {
   if (questionCount <= 0) return [];
 
   const numGroups = Math.min(groupCount, questionCount);
@@ -201,7 +214,7 @@ function generateTierGroups(maxPoint, questionCount, groupCount, distribution) {
   const groups = [];
 
   for (let i = 0; i < numGroups; i++) {
-    const point = round1(maxPoint - i * WITHIN_INTERVAL);
+    const point = roundToInterval(maxPoint - i * scoreInterval, scoreInterval);
     const assign = counts[i];
     groups.push({ point, count: assign });
   }
@@ -229,13 +242,13 @@ function minPointOfGroups(groups) {
 }
 
 function buildInitialStructure(part, groupCounts, betweenGap, distribution) {
-  const { counts, anchor1, anchor2 } = part;
+  const { counts, anchor1, anchor2, scoreInterval } = part;
   const tierGroups = [];
 
   if (counts.상 > 0) {
     tierGroups.push({
       tier: "상",
-      groups: generateTierGroups(anchor1, counts.상, groupCounts.상, distribution),
+      groups: generateTierGroups(anchor1, counts.상, groupCounts.상, distribution, scoreInterval),
     });
   }
 
@@ -249,7 +262,7 @@ function buildInitialStructure(part, groupCounts, betweenGap, distribution) {
     }
     tierGroups.push({
       tier: "중",
-      groups: generateTierGroups(maxM, counts.중, groupCounts.중, distribution),
+      groups: generateTierGroups(maxM, counts.중, groupCounts.중, distribution, scoreInterval),
     });
   }
 
@@ -266,7 +279,7 @@ function buildInitialStructure(part, groupCounts, betweenGap, distribution) {
     }
     tierGroups.push({
       tier: "하",
-      groups: generateTierGroups(maxL, counts.하, groupCounts.하, distribution),
+      groups: generateTierGroups(maxL, counts.하, groupCounts.하, distribution, scoreInterval),
     });
   }
 
@@ -278,8 +291,8 @@ function buildInitialStructure(part, groupCounts, betweenGap, distribution) {
   if (anchor2 !== null && counts.하 > 0) {
     const lowPoints = questions.filter((q) => q.tier === "하").map((q) => q.point);
     const currentMinL = Math.min(...lowPoints);
-    const shift = round1(anchor2 - currentMinL);
-    questions = questions.map((q) => ({ ...q, point: round1(q.point + shift) }));
+    const shift = roundToInterval(anchor2 - currentMinL, scoreInterval);
+    questions = questions.map((q) => ({ ...q, point: roundToInterval(q.point + shift, scoreInterval) }));
   }
 
   return questions;
@@ -306,7 +319,7 @@ function checkOrdering(questions, betweenGap) {
 }
 
 function preservesGroupCounts(questions, groupCounts) {
-  for (const tier of TIER_ORDER) {
+  for (const tier of DISPLAY_TIER_ORDER) {
     const tierQuestions = questions.filter((q) => q.tier === tier);
     if (!tierQuestions.length) continue;
     const uniquePoints = new Set(tierQuestions.map((q) => q.point.toFixed(1)));
@@ -333,7 +346,7 @@ function sumGroups(groups) {
   return round1(groups.reduce((sum, group) => sum + group.point * group.count, 0));
 }
 
-function findGroupAdjustmentSteps(groups, units) {
+function findGroupAdjustmentSteps(groups, units, scoreInterval) {
   if (units === 0) return new Array(groups.length).fill(0);
 
   const direction = units > 0 ? 1 : -1;
@@ -346,7 +359,7 @@ function findGroupAdjustmentSteps(groups, units) {
     const maxSteps =
       direction > 0
         ? Math.ceil(target / group.count) + 2
-        : Math.max(0, Math.round(group.point * 10) - 1);
+        : Math.max(0, Math.round((group.point - scoreInterval) / scoreInterval));
 
     for (const [sum, state] of states.entries()) {
       for (let stepCount = 1; stepCount <= maxSteps; stepCount++) {
@@ -369,28 +382,28 @@ function findGroupAdjustmentSteps(groups, units) {
   return result ? result.steps : null;
 }
 
-function adjustToTarget(questions, targetTotal) {
+function adjustToTarget(questions, targetTotal, scoreInterval) {
   if (!questions.length) return questions;
 
   const groups = collectScoreGroups(questions);
   let delta = round1(targetTotal - sumGroups(groups));
 
   if (Math.abs(delta) >= 0.05) {
-    const uniformShift = round1(delta / questions.length);
-    if (uniformShift !== 0 && groups.every((group) => round1(group.point + uniformShift) > 0)) {
+    const uniformShift = roundToInterval(delta / questions.length, scoreInterval);
+    if (uniformShift !== 0 && groups.every((group) => roundToInterval(group.point + uniformShift, scoreInterval) > 0)) {
       groups.forEach((group) => {
-        group.point = round1(group.point + uniformShift);
+        group.point = roundToInterval(group.point + uniformShift, scoreInterval);
       });
     }
   }
 
   delta = round1(targetTotal - sumGroups(groups));
-  const units = Math.round(delta * 10);
-  const steps = findGroupAdjustmentSteps(groups, units);
+  const units = Math.round(delta / scoreInterval);
+  const steps = findGroupAdjustmentSteps(groups, units, scoreInterval);
 
   if (steps) {
     groups.forEach((group, index) => {
-      group.point = round1(group.point + steps[index] * WITHIN_INTERVAL);
+      group.point = roundToInterval(group.point + steps[index] * scoreInterval, scoreInterval);
     });
   }
 
@@ -399,16 +412,22 @@ function adjustToTarget(questions, targetTotal) {
 }
 
 function validatePartInput(part, groupCounts) {
-  const { label, total, counts, targetTotal, anchor1, anchor2, betweenGap } = part;
+  const { id, label, total, counts, targetTotal, anchor1, anchor2, betweenGap, scoreInterval } = part;
   const sum = counts.상 + counts.중 + counts.하;
 
   if (!Number.isFinite(total) || total < 1) return `${label} 총 문항 수를 1 이상으로 입력해 주세요.`;
   if (sum !== total) return `${label} 난이도별 문항 수 합(${sum})이 총 문항 수(${total})와 일치하지 않습니다.`;
   if (sum === 0) return `${label} 문항 수가 0입니다.`;
   if (!Number.isFinite(targetTotal) || targetTotal <= 0) return `${label} 총점을 0보다 크게 입력해 주세요.`;
+  if (id === "written" && !Number.isInteger(targetTotal)) {
+    return "서답형 목표 점수는 정수로 입력해 주세요.";
+  }
   if (!Number.isFinite(anchor1) || anchor1 <= 0) return `${label} 배점 예시 1을 0보다 크게 입력해 주세요.`;
   if (anchor2 !== null && (!Number.isFinite(anchor2) || anchor2 <= 0)) return `${label} 배점 예시 2가 올바르지 않습니다.`;
   if (anchor2 !== null && anchor2 >= anchor1) return `${label} 배점 예시 2는 예시 1보다 작아야 합니다.`;
+  if (id === "written" && (!Number.isInteger(anchor1) || (anchor2 !== null && !Number.isInteger(anchor2)))) {
+    return "서답형 배점 예시는 정수로 입력해 주세요. 소수점 배점은 추천안 선택 후 직접 수정할 수 있습니다.";
+  }
   if (!Number.isFinite(betweenGap) || betweenGap <= 0) return `${label} 난이도 간 최소 간격을 0보다 크게 입력해 주세요.`;
 
   for (const tier of TIER_ORDER) {
@@ -419,9 +438,9 @@ function validatePartInput(part, groupCounts) {
   }
 
   const minNeeded =
-    (counts.상 > 0 ? (groupCounts.상 - 1) * WITHIN_INTERVAL : 0) +
-    (counts.중 > 0 ? (groupCounts.중 - 1) * WITHIN_INTERVAL : 0) +
-    (counts.하 > 0 ? (groupCounts.하 - 1) * WITHIN_INTERVAL : 0);
+    (counts.상 > 0 ? (groupCounts.상 - 1) * scoreInterval : 0) +
+    (counts.중 > 0 ? (groupCounts.중 - 1) * scoreInterval : 0) +
+    (counts.하 > 0 ? (groupCounts.하 - 1) * scoreInterval : 0);
 
   const gaps =
     (counts.상 > 0 && counts.중 > 0 ? betweenGap : 0) +
@@ -468,7 +487,7 @@ function recommendPart(part, profile) {
     return { error: `${part.label} 계산 결과에 0 이하 배점이 생깁니다.`, questions: null, groupCounts, part };
   }
 
-  questions = adjustToTarget(questions, part.targetTotal).map((q) => ({
+  questions = adjustToTarget(questions, part.targetTotal, part.scoreInterval).map((q) => ({
     ...q,
     partId: part.id,
     partLabel: part.label,
@@ -550,7 +569,7 @@ function tierStats(questions) {
 function summarizeByGroups(questions) {
   const result = [];
 
-  for (const tier of TIER_ORDER) {
+  for (const tier of DISPLAY_TIER_ORDER) {
     const tierQs = questions.filter((q) => q.tier === tier);
     if (!tierQs.length) continue;
 
@@ -564,7 +583,7 @@ function summarizeByGroups(questions) {
       .map(([point, count]) => ({ point, count }));
 
     const subtotal = round1(tierQs.reduce((a, q) => a + q.point, 0));
-    const groupText = groups.map((g) => `${g.point.toFixed(1)}점 ${g.count}문항`).join(", ");
+    const groupText = groups.map((g) => `${formatPoint(g.point)}점 ${g.count}문항`).join(", ");
 
     result.push({
       tier,
@@ -584,7 +603,7 @@ function renderGroupSummaryHtml(groupSummary) {
       (g) => `
       <div class="group-tier group-tier-${TIER_KEYS[g.tier]}">
         <div class="group-tier-head">
-          <strong>${g.tier}</strong> ${g.count}문항 · 소계 ${g.subtotal.toFixed(1)}점
+          <strong>${g.tier}</strong> ${g.count}문항 · 소계 ${formatPoint(g.subtotal)}점
         </div>
         <div class="group-tier-detail">${g.groupText}</div>
       </div>`
@@ -597,7 +616,7 @@ function renderPartResultHtml(partResult) {
   const badges = TIER_ORDER.filter((t) => stats[t])
     .map(
       (t) =>
-        `<span class="tier-badge ${TIER_KEYS[t]}">${t} ${stats[t].count}문항 · ${stats[t].max}~${stats[t].min}점 · 소계 ${stats[t].subtotal}점</span>`
+        `<span class="tier-badge ${TIER_KEYS[t]}">${t} ${stats[t].count}문항 · ${formatPoint(stats[t].max)}~${formatPoint(stats[t].min)}점 · 소계 ${formatPoint(stats[t].subtotal)}점</span>`
     )
     .join("");
 
@@ -605,9 +624,9 @@ function renderPartResultHtml(partResult) {
     <div class="part-result">
       <div class="part-result-head">
         <strong>${part.label}</strong>
-        <span>${part.total}문항 · ${part.targetTotal.toFixed(1)}점</span>
+        <span>${part.total}문항 · ${formatPoint(part.targetTotal)}점</span>
       </div>
-      <div class="meta">난이도 간 ${betweenGap}점 · ${formatGroupCountsMeta(groupCounts, part.counts)}</div>
+      <div class="meta">난이도 간 ${formatPoint(betweenGap)}점 · ${formatGroupCountsMeta(groupCounts, part.counts)}</div>
       <div class="tier-summary">${badges}</div>
       <div class="proposal-groups">${renderGroupSummaryHtml(groupSummary)}</div>
     </div>`;
@@ -635,7 +654,7 @@ function renderProposals(variants) {
       <article class="proposal-card" data-variant="${v.id}">
         <h3>${v.label}</h3>
         <div class="proposal-summary">
-          <div class="total">총점: ${v.totalSum.toFixed(1)}점</div>
+          <div class="total">총점: ${formatPoint(v.totalSum)}점</div>
           <div class="meta">입력한 배점 종류 수는 유지하고, 배점별 문항 수 분포만 조정합니다.</div>
         </div>
         <div class="part-results">${v.partResults.map(renderPartResultHtml).join("")}</div>
@@ -654,7 +673,7 @@ function selectProposal(variantId) {
   if (!variant || variant.error) return;
 
   state.selectedVariantId = variantId;
-  state.selectedQuestions = variant.questions.map((q) => ({ ...q }));
+  state.selectedQuestions = orderQuestionsForEditing(variant.questions).map((q) => ({ ...q }));
   state.partTargets = {};
   state.partGaps = {};
   variant.partResults.forEach((partResult) => {
@@ -667,6 +686,25 @@ function selectProposal(variantId) {
   document.getElementById("selected-label").textContent = variant.label;
 
   renderEditor();
+}
+
+function orderQuestionsForEditing(questions) {
+  const partOrder = [...new Set(questions.map((q) => q.partId))];
+  return questions
+    .map((q, index) => ({ ...q, originalIndex: index }))
+    .sort((a, b) => {
+      const partDiff = partOrder.indexOf(a.partId) - partOrder.indexOf(b.partId);
+      if (partDiff !== 0) return partDiff;
+
+      const tierDiff = DISPLAY_TIER_ORDER.indexOf(a.tier) - DISPLAY_TIER_ORDER.indexOf(b.tier);
+      if (tierDiff !== 0) return tierDiff;
+
+      const pointDiff = a.point - b.point;
+      if (pointDiff !== 0) return pointDiff;
+
+      return a.originalIndex - b.originalIndex;
+    })
+    .map(({ originalIndex, ...q }) => q);
 }
 
 function hasMoreThanOneDecimal(value) {
@@ -766,13 +804,13 @@ function renderEditor() {
       <td>${i + 1}</td>
       <td>
         <select class="tier-input tier-input-${TIER_KEYS[q.tier]}" data-index="${i}">
-          ${TIER_ORDER.map(
+          ${DISPLAY_TIER_ORDER.map(
             (t) => `<option value="${t}"${q.tier === t ? " selected" : ""}>${t}</option>`
           ).join("")}
         </select>
       </td>
       <td>
-        <input type="number" class="point-input" data-index="${i}" value="${q.point.toFixed(1)}" step="0.1" min="0.1">
+        <input type="number" class="point-input" data-index="${i}" value="${formatPoint(q.point)}" step="0.1" min="0.1">
       </td>
     </tr>`
     )
@@ -985,4 +1023,5 @@ document.getElementById("written-enabled").addEventListener("change", updateSumS
 document.getElementById("calculate-btn").addEventListener("click", onCalculate);
 document.getElementById("back-btn").addEventListener("click", backToProposals);
 document.getElementById("export-btn").addEventListener("click", onExportClick);
+document.getElementById("export-bottom-btn").addEventListener("click", onExportClick);
 updateSumStatus();
