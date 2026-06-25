@@ -18,6 +18,7 @@ const state = {
   selectedQuestions: [],
   partTargets: {},
   partGaps: {},
+  dragSourceIndex: null,
 };
 
 function round1(n) {
@@ -799,7 +800,8 @@ function renderEditor() {
   tbody.innerHTML = state.selectedQuestions
     .map(
       (q, i) => `
-    <tr data-index="${i}">
+    <tr data-index="${i}" draggable="true">
+      <td class="drag-cell" title="같은 유형 안에서 드래그해 난이도와 배점을 바꿉니다.">↕</td>
       <td>${q.partLabel}</td>
       <td>${i + 1}</td>
       <td>
@@ -822,8 +824,89 @@ function renderEditor() {
   tbody.querySelectorAll(".tier-input").forEach((input) => {
     input.addEventListener("change", onEditorTierChange);
   });
+  tbody.querySelectorAll("tr").forEach((row) => {
+    row.addEventListener("dragstart", onEditorDragStart);
+    row.addEventListener("dragover", onEditorDragOver);
+    row.addEventListener("dragleave", onEditorDragLeave);
+    row.addEventListener("drop", onEditorDrop);
+    row.addEventListener("dragend", onEditorDragEnd);
+  });
 
   updateEditorValidation();
+}
+
+function isEditorSwapAllowed(sourceIndex, targetIndex) {
+  if (!Number.isInteger(sourceIndex) || !Number.isInteger(targetIndex)) return false;
+  if (sourceIndex === targetIndex) return false;
+
+  const source = state.selectedQuestions[sourceIndex];
+  const target = state.selectedQuestions[targetIndex];
+  return Boolean(source && target && source.partId === target.partId);
+}
+
+function clearEditorDragClasses() {
+  document.querySelectorAll("#editor-body tr").forEach((row) => {
+    row.classList.remove("dragging", "drop-allowed", "drop-blocked");
+  });
+}
+
+function onEditorDragStart(e) {
+  if (e.target.closest("input, select")) {
+    e.preventDefault();
+    return;
+  }
+
+  const row = e.currentTarget;
+  const idx = parseInt(row.dataset.index, 10);
+  state.dragSourceIndex = idx;
+  row.classList.add("dragging");
+
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(idx));
+  }
+}
+
+function onEditorDragOver(e) {
+  const targetIndex = parseInt(e.currentTarget.dataset.index, 10);
+  const allowed = isEditorSwapAllowed(state.dragSourceIndex, targetIndex);
+  e.currentTarget.classList.toggle("drop-allowed", allowed);
+  e.currentTarget.classList.toggle("drop-blocked", !allowed && state.dragSourceIndex !== null);
+
+  if (allowed) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  }
+}
+
+function onEditorDragLeave(e) {
+  e.currentTarget.classList.remove("drop-allowed", "drop-blocked");
+}
+
+function onEditorDrop(e) {
+  const targetIndex = parseInt(e.currentTarget.dataset.index, 10);
+  if (!isEditorSwapAllowed(state.dragSourceIndex, targetIndex)) return;
+
+  e.preventDefault();
+  swapQuestionScoring(state.dragSourceIndex, targetIndex);
+  state.dragSourceIndex = null;
+  renderEditor();
+}
+
+function onEditorDragEnd() {
+  state.dragSourceIndex = null;
+  clearEditorDragClasses();
+}
+
+function swapQuestionScoring(sourceIndex, targetIndex) {
+  const source = state.selectedQuestions[sourceIndex];
+  const target = state.selectedQuestions[targetIndex];
+  const sourceValues = { tier: source.tier, point: source.point };
+
+  source.tier = target.tier;
+  source.point = target.point;
+  target.tier = sourceValues.tier;
+  target.point = sourceValues.point;
 }
 
 function onEditorInput(e) {

@@ -481,6 +481,34 @@ header h1 {
 .editor-table .tier-input-mid  { color: #b7791f; border-left: 3px solid #d69e2e; }
 .editor-table .tier-input-low  { color: #276749; border-left: 3px solid #38a169; }
 
+.editor-table tbody tr[draggable="true"] {
+  cursor: grab;
+}
+
+.editor-table tbody tr.dragging {
+  opacity: 0.55;
+}
+
+.editor-table tbody tr.drop-allowed {
+  outline: 2px dashed #3182ce;
+  outline-offset: -2px;
+  background: #ebf8ff;
+}
+
+.editor-table tbody tr.drop-blocked {
+  outline: 2px dashed #fc8181;
+  outline-offset: -2px;
+  background: #fff5f5;
+}
+
+.drag-cell {
+  width: 3.5rem;
+  text-align: center;
+  color: #718096;
+  font-weight: 700;
+  user-select: none;
+}
+
 .editor-table tr.row-error .point-input {
   border-color: #fc8181;
   background: #fff5f5;
