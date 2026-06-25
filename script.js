@@ -7,9 +7,9 @@ const WRITTEN_BETWEEN_GAP = 1;
 const TOTAL_SCORE = 100;
 
 const VARIANT_PROFILES = [
-  { id: "front", label: "안 A · 고배점 문항 강화형", distribution: "front" },
-  { id: "balanced", label: "안 B · 균형형", distribution: "balanced" },
-  { id: "back", label: "안 C · 저배점 문항 보강형", distribution: "back" },
+  { id: "dense", label: "안 A · 밀집형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.1, maxPoint: 0.1 } },
+  { id: "balanced", label: "안 B · 균형형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.1, maxPoint: 0.2 } },
+  { id: "spread", label: "안 C · 분산형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.3, maxPoint: null } },
 ];
 
 const state = {
@@ -200,8 +200,8 @@ function distributeQuestionCounts(questionCount, numGroups, distribution) {
     counts[order[i % order.length]]++;
   }
 
-  // When the division is perfectly even, nudge the two non-balanced variants so
-  // the three proposals still differ by 문항 수 분포, not by 배점 종류 수.
+  // Keep the displayed group-count summaries from collapsing into identical
+  // rows when a tier divides evenly across score groups.
   if (questionCount > numGroups && questionCount % numGroups === 0) {
     if (distribution === "front" && counts[numGroups - 1] > 1) {
       counts[0]++;
@@ -236,12 +236,27 @@ function buildScoreGroupSequence(part, groupCounts, distribution) {
   return groups;
 }
 
-function requiredDropUnits(prevGroup, nextGroup, part) {
-  if (prevGroup.tier === nextGroup.tier) return 1;
+function withinGapUnitBounds(profile, part) {
+  const minUnits = Math.max(1, Math.ceil(profile.withinGap.minPoint / part.scoreInterval - 0.0001));
+  if (profile.withinGap.maxPoint === null) {
+    return { minUnits, maxUnits: null };
+  }
+
+  const maxUnits = Math.max(minUnits, Math.floor(profile.withinGap.maxPoint / part.scoreInterval + 0.0001));
+  return { minUnits, maxUnits };
+}
+
+function requiredDropUnits(prevGroup, nextGroup, part, profile) {
+  if (prevGroup.tier === nextGroup.tier) return withinGapUnitBounds(profile, part).minUnits;
   return Math.ceil(part.betweenGap / part.scoreInterval - 0.0001);
 }
 
-function solveEndpointSlack(groups, requiredDrops, slackTotal, reductionTarget) {
+function maxDropUnits(prevGroup, nextGroup, part, profile) {
+  if (prevGroup.tier !== nextGroup.tier) return null;
+  return withinGapUnitBounds(profile, part).maxUnits;
+}
+
+function solveEndpointSlack(groups, requiredDrops, maxSlackByGap, slackTotal, reductionTarget) {
   const suffixCounts = [];
   for (let i = 0; i < requiredDrops.length; i++) {
     suffixCounts[i] = groups.slice(i + 1).reduce((sum, group) => sum + group.count, 0);
@@ -255,7 +270,10 @@ function solveEndpointSlack(groups, requiredDrops, slackTotal, reductionTarget) 
 
     for (const state of states.values()) {
       const remaining = slackTotal - state.slack;
-      for (let add = 0; add <= remaining; add++) {
+      const maxSlack = maxSlackByGap[gapIndex];
+      const upper = maxSlack === null ? remaining : Math.min(remaining, maxSlack);
+
+      for (let add = 0; add <= upper; add++) {
         const nextSlack = state.slack + add;
         const nextReduction = state.reduction + add * weight;
         if (nextReduction > reductionTarget) continue;
@@ -276,7 +294,20 @@ function solveEndpointSlack(groups, requiredDrops, slackTotal, reductionTarget) 
   return states.get(`${slackTotal}|${reductionTarget}`)?.values || null;
 }
 
-function buildForcedEndpointStructure(part, groupCounts, distribution) {
+function buildForcedEndpointStructure(part, groupCounts, profile) {
+  const distributions = profile.distributions || [profile.distribution || "balanced"];
+  let lastError = null;
+
+  for (const distribution of distributions) {
+    const result = buildForcedEndpointStructureForDistribution(part, groupCounts, profile, distribution);
+    if (!result.error) return result;
+    lastError = result.error;
+  }
+
+  return { error: lastError, questions: null };
+}
+
+function buildForcedEndpointStructureForDistribution(part, groupCounts, profile, distribution) {
   const groups = buildScoreGroupSequence(part, groupCounts, distribution);
   if (!groups.length) return { error: `${part.label} 문항 수가 0입니다.`, questions: null };
 
@@ -305,8 +336,12 @@ function buildForcedEndpointStructure(part, groupCounts, distribution) {
   }
 
   const requiredDrops = [];
+  const maxSlackByGap = [];
   for (let i = 0; i < groups.length - 1; i++) {
-    requiredDrops.push(requiredDropUnits(groups[i], groups[i + 1], part));
+    const requiredDrop = requiredDropUnits(groups[i], groups[i + 1], part, profile);
+    const maxDrop = maxDropUnits(groups[i], groups[i + 1], part, profile);
+    requiredDrops.push(requiredDrop);
+    maxSlackByGap.push(maxDrop === null ? null : maxDrop - requiredDrop);
   }
 
   const requiredDropTotal = requiredDrops.reduce((sum, drop) => sum + drop, 0);
@@ -328,9 +363,9 @@ function buildForcedEndpointStructure(part, groupCounts, distribution) {
     return { error: `${part.label} 최고점·최하점을 고정하면 목표 총점보다 낮출 여지가 없습니다.`, questions: null };
   }
 
-  const slackValues = solveEndpointSlack(groups, requiredDrops, slackTotal, reductionTarget);
+  const slackValues = solveEndpointSlack(groups, requiredDrops, maxSlackByGap, slackTotal, reductionTarget);
   if (!slackValues) {
-    return { error: `${part.label} 입력한 최고점·최하점과 문항 수 분포로 목표 총점을 만들 수 없습니다.`, questions: null };
+    return { error: `${part.label} 입력한 최고점·최하점과 이 안의 배점 간격 조건으로 목표 총점을 만들 수 없습니다.`, questions: null };
   }
 
   const pointUnits = [maxUnits];
@@ -596,7 +631,7 @@ function validatePartInput(part, groupCounts) {
     (counts.상 > 0 && counts.하 > 0 && counts.중 === 0 ? betweenGap : 0);
 
   if (anchor1 - minNeeded - gaps < 0.5) {
-    return `${label} 문항 수·배점 종류 대비 배점 예시가 너무 낮습니다. 예시 배점을 높이거나 배점 종류 수를 줄여 주세요.`;
+    return `${label} 문항 수·배점 종류 대비 최고점이 너무 낮습니다. 최고점을 높이거나 배점 종류 수를 줄여 주세요.`;
   }
 
   return null;
@@ -629,7 +664,7 @@ function recommendPart(part, profile) {
   const err = validatePartInput(part, groupCounts);
   if (err) return { error: err, questions: null, groupCounts, part };
 
-  const forcedStructure = buildForcedEndpointStructure(part, groupCounts, profile.distribution);
+  const forcedStructure = buildForcedEndpointStructure(part, groupCounts, profile);
   if (forcedStructure.error) {
     return { error: forcedStructure.error, questions: null, groupCounts, part };
   }
@@ -647,7 +682,7 @@ function recommendPart(part, profile) {
   }));
 
   if (!preservesGroupCounts(questions, groupCounts)) {
-    return { error: `${part.label} 입력한 배점 종류 수를 유지할 수 없습니다. 배점 예시나 배점 종류 수를 조정해 주세요.`, questions: null, groupCounts, part };
+    return { error: `${part.label} 입력한 배점 종류 수를 유지할 수 없습니다. 최고점·최하점이나 배점 종류 수를 조정해 주세요.`, questions: null, groupCounts, part };
   }
 
   if (!checkOrdering(questions, betweenGap)) {
@@ -785,6 +820,13 @@ function renderPartResultHtml(partResult) {
     </div>`;
 }
 
+function formatVariantGapMeta(variant) {
+  const { minPoint, maxPoint } = variant.withinGap;
+  if (maxPoint === null) return `난이도 내 배점 간격 ${formatPoint(minPoint)}점 이상`;
+  if (minPoint === maxPoint) return `난이도 내 배점 간격 ${formatPoint(minPoint)}점`;
+  return `난이도 내 배점 간격 ${formatPoint(minPoint)}~${formatPoint(maxPoint)}점`;
+}
+
 function renderProposals(variants) {
   const section = document.getElementById("result-section");
   const editorSection = document.getElementById("editor-section");
@@ -808,7 +850,7 @@ function renderProposals(variants) {
         <h3>${v.label}</h3>
         <div class="proposal-summary">
           <div class="total">총점: ${formatPoint(v.totalSum)}점</div>
-          <div class="meta">입력한 배점 종류 수는 유지하고, 배점별 문항 수 분포만 조정합니다.</div>
+          <div class="meta">${formatVariantGapMeta(v)} · 입력한 배점 종류 수와 최고점·최하점을 유지합니다.</div>
         </div>
         <div class="part-results">${v.partResults.map(renderPartResultHtml).join("")}</div>
         <button type="button" class="select-btn" data-variant="${v.id}">이 안 선택하기</button>

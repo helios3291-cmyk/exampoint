@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>고등학교 시험 배점 추천기</title>
-  <link rel="stylesheet" href="style.css?v=forced-endpoints">
+  <link rel="stylesheet" href="style.css?v=gap-profiles">
 </head>
 <body>
   <div class="container">
@@ -62,11 +62,11 @@
       <div class="anchors">
         <div class="field">
           <label for="anchor1">선택형 최고점 <span class="hint">(필수)</span></label>
-          <input type="number" id="anchor1" min="0.1" step="0.1" value="6.0">
+          <input type="number" id="anchor1" min="0.1" step="0.1" value="6.5">
         </div>
         <div class="field">
           <label for="anchor2">선택형 최하점 <span class="hint">(필수)</span></label>
-          <input type="number" id="anchor2" min="0.1" step="0.1" value="3.0">
+          <input type="number" id="anchor2" min="0.1" step="0.1" value="2.8">
         </div>
       </div>
 
@@ -155,7 +155,7 @@
       <p class="notice">
         고등학교 시험에서는 동점을 줄이기 위해 문항마다 차등 배점을 씁니다.
         최고점과 최하점은 반드시 지켜야 하는 값이며, 불가능한 경우 생성 불가 사유를 안내합니다.
-        아래 추천안은 입력한 배점 종류 수를 유지한 채 배점별 문항 수 분포를 조정합니다.
+        아래 추천안은 입력한 배점 종류 수를 유지한 채 난이도 내 배점 간격을 밀집형·균형형·분산형으로 달리합니다.
       </p>
 
       <button type="button" id="calculate-btn" class="primary-btn">배점 추천하기</button>
@@ -202,7 +202,7 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="script.js?v=forced-endpoints"></script>
+  <script src="script.js?v=gap-profiles"></script>
 </body>
 </html>
 
