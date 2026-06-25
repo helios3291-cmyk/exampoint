@@ -9,7 +9,7 @@ const TOTAL_SCORE = 100;
 const VARIANT_PROFILES = [
   { id: "dense", label: "안 A · 밀집형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.1, maxPoint: 0.1 } },
   { id: "balanced", label: "안 B · 균형형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.1, maxPoint: 0.2 } },
-  { id: "spread", label: "안 C · 분산형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.3, maxPoint: null } },
+  { id: "spread", label: "안 C · 분산형", distributions: ["balanced", "front", "back"], withinGap: { minPoint: 0.2, maxPoint: null } },
 ];
 
 const state = {
