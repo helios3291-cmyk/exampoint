@@ -29,6 +29,14 @@ function roundToInterval(n, interval) {
   return round1(Math.round(n / interval) * interval);
 }
 
+function toUnits(n, interval) {
+  return Math.round(n / interval);
+}
+
+function fromUnits(units, interval) {
+  return round1(units * interval);
+}
+
 function formatPoint(point) {
   return Number.isInteger(point) ? String(point) : point.toFixed(1);
 }
@@ -207,6 +215,142 @@ function distributeQuestionCounts(questionCount, numGroups, distribution) {
   return counts;
 }
 
+function buildScoreGroupSequence(part, groupCounts, distribution) {
+  const groups = [];
+
+  for (const tier of TIER_ORDER) {
+    const questionCount = part.counts[tier];
+    if (questionCount <= 0) continue;
+
+    const numGroups = Math.min(groupCounts[tier], questionCount);
+    const counts = distributeQuestionCounts(questionCount, numGroups, distribution);
+    counts.forEach((count, groupIndex) => {
+      groups.push({
+        tier,
+        count,
+        scoreGroupId: `${tier}-${groupIndex}`,
+      });
+    });
+  }
+
+  return groups;
+}
+
+function requiredDropUnits(prevGroup, nextGroup, part) {
+  if (prevGroup.tier === nextGroup.tier) return 1;
+  return Math.ceil(part.betweenGap / part.scoreInterval - 0.0001);
+}
+
+function solveEndpointSlack(groups, requiredDrops, slackTotal, reductionTarget) {
+  const suffixCounts = [];
+  for (let i = 0; i < requiredDrops.length; i++) {
+    suffixCounts[i] = groups.slice(i + 1).reduce((sum, group) => sum + group.count, 0);
+  }
+
+  let states = new Map([["0|0", { slack: 0, reduction: 0, values: [] }]]);
+
+  requiredDrops.forEach((_, gapIndex) => {
+    const nextStates = new Map();
+    const weight = suffixCounts[gapIndex];
+
+    for (const state of states.values()) {
+      const remaining = slackTotal - state.slack;
+      for (let add = 0; add <= remaining; add++) {
+        const nextSlack = state.slack + add;
+        const nextReduction = state.reduction + add * weight;
+        if (nextReduction > reductionTarget) continue;
+
+        const key = `${nextSlack}|${nextReduction}`;
+        if (nextStates.has(key)) continue;
+        nextStates.set(key, {
+          slack: nextSlack,
+          reduction: nextReduction,
+          values: state.values.concat(add),
+        });
+      }
+    }
+
+    states = nextStates;
+  });
+
+  return states.get(`${slackTotal}|${reductionTarget}`)?.values || null;
+}
+
+function buildForcedEndpointStructure(part, groupCounts, distribution) {
+  const groups = buildScoreGroupSequence(part, groupCounts, distribution);
+  if (!groups.length) return { error: `${part.label} 문항 수가 0입니다.`, questions: null };
+
+  const maxUnits = toUnits(part.anchor1, part.scoreInterval);
+  const minUnits = toUnits(part.anchor2, part.scoreInterval);
+  const targetUnits = toUnits(part.targetTotal, part.scoreInterval);
+
+  if (groups.length === 1) {
+    if (maxUnits !== minUnits) {
+      return { error: `${part.label} 배점 종류가 1개인 경우 최고점과 최하점이 같아야 합니다.`, questions: null };
+    }
+
+    const totalUnits = maxUnits * groups[0].count;
+    if (totalUnits !== targetUnits) {
+      return { error: `${part.label} 최고점·최하점 고정값으로 목표 총점 ${formatPoint(part.targetTotal)}점을 만들 수 없습니다.`, questions: null };
+    }
+
+    return {
+      error: null,
+      questions: expandGroupsToQuestions([{ ...groups[0], point: fromUnits(maxUnits, part.scoreInterval) }], groups[0].tier),
+    };
+  }
+
+  if (maxUnits <= minUnits) {
+    return { error: `${part.label} 최고점은 최하점보다 커야 합니다.`, questions: null };
+  }
+
+  const requiredDrops = [];
+  for (let i = 0; i < groups.length - 1; i++) {
+    requiredDrops.push(requiredDropUnits(groups[i], groups[i + 1], part));
+  }
+
+  const requiredDropTotal = requiredDrops.reduce((sum, drop) => sum + drop, 0);
+  const availableDrop = maxUnits - minUnits;
+  if (availableDrop < requiredDropTotal) {
+    return { error: `${part.label} 최고점·최하점 사이가 좁아 배점 종류 수와 난이도 간격을 유지할 수 없습니다.`, questions: null };
+  }
+
+  const baseUnits = [maxUnits];
+  for (let i = 0; i < requiredDrops.length; i++) {
+    baseUnits.push(baseUnits[i] - requiredDrops[i]);
+  }
+
+  const baseTotalUnits = baseUnits.reduce((sum, units, index) => sum + units * groups[index].count, 0);
+  const slackTotal = availableDrop - requiredDropTotal;
+  const reductionTarget = baseTotalUnits - targetUnits;
+
+  if (reductionTarget < 0) {
+    return { error: `${part.label} 최고점·최하점을 고정하면 목표 총점보다 낮출 여지가 없습니다.`, questions: null };
+  }
+
+  const slackValues = solveEndpointSlack(groups, requiredDrops, slackTotal, reductionTarget);
+  if (!slackValues) {
+    return { error: `${part.label} 입력한 최고점·최하점과 문항 수 분포로 목표 총점을 만들 수 없습니다.`, questions: null };
+  }
+
+  const pointUnits = [maxUnits];
+  for (let i = 0; i < requiredDrops.length; i++) {
+    pointUnits.push(pointUnits[i] - requiredDrops[i] - slackValues[i]);
+  }
+
+  const scoredGroups = groups.map((group, index) => ({
+    ...group,
+    point: fromUnits(pointUnits[index], part.scoreInterval),
+  }));
+
+  let questions = [];
+  for (const group of scoredGroups) {
+    questions.push(...expandGroupsToQuestions([group], group.tier));
+  }
+
+  return { error: null, questions };
+}
+
 function generateTierGroups(maxPoint, questionCount, groupCount, distribution, scoreInterval) {
   if (questionCount <= 0) return [];
 
@@ -225,9 +369,9 @@ function generateTierGroups(maxPoint, questionCount, groupCount, distribution, s
 
 function expandGroupsToQuestions(groups, tier) {
   const questions = [];
-  groups.forEach(({ point, count }, groupIndex) => {
+  groups.forEach(({ point, count, scoreGroupId }, groupIndex) => {
     for (let i = 0; i < count; i++) {
-      questions.push({ tier, point, scoreGroupId: `${tier}-${groupIndex}` });
+      questions.push({ tier, point, scoreGroupId: scoreGroupId || `${tier}-${groupIndex}` });
     }
   });
   return questions;
@@ -423,11 +567,14 @@ function validatePartInput(part, groupCounts) {
   if (id === "written" && !Number.isInteger(targetTotal)) {
     return "서답형 목표 점수는 정수로 입력해 주세요.";
   }
-  if (!Number.isFinite(anchor1) || anchor1 <= 0) return `${label} 배점 예시 1을 0보다 크게 입력해 주세요.`;
-  if (anchor2 !== null && (!Number.isFinite(anchor2) || anchor2 <= 0)) return `${label} 배점 예시 2가 올바르지 않습니다.`;
-  if (anchor2 !== null && anchor2 >= anchor1) return `${label} 배점 예시 2는 예시 1보다 작아야 합니다.`;
+  if (!Number.isFinite(anchor1) || anchor1 <= 0) return `${label} 최고점을 0보다 크게 입력해 주세요.`;
+  if (!Number.isFinite(anchor2) || anchor2 <= 0) return `${label} 최하점을 0보다 크게 입력해 주세요.`;
+  if (anchor2 >= anchor1) return `${label} 최하점은 최고점보다 작아야 합니다.`;
+  if (roundToInterval(anchor1, scoreInterval) !== anchor1 || roundToInterval(anchor2, scoreInterval) !== anchor2) {
+    return `${label} 최고점·최하점은 ${formatPoint(scoreInterval)}점 단위로 입력해 주세요.`;
+  }
   if (id === "written" && (!Number.isInteger(anchor1) || (anchor2 !== null && !Number.isInteger(anchor2)))) {
-    return "서답형 배점 예시는 정수로 입력해 주세요. 소수점 배점은 추천안 선택 후 직접 수정할 수 있습니다.";
+    return "서답형 최고점·최하점은 정수로 입력해 주세요. 소수점 배점은 추천안 선택 후 직접 수정할 수 있습니다.";
   }
   if (!Number.isFinite(betweenGap) || betweenGap <= 0) return `${label} 난이도 간 최소 간격을 0보다 크게 입력해 주세요.`;
 
@@ -482,13 +629,18 @@ function recommendPart(part, profile) {
   const err = validatePartInput(part, groupCounts);
   if (err) return { error: err, questions: null, groupCounts, part };
 
-  let questions = buildInitialStructure(part, groupCounts, betweenGap, profile.distribution);
+  const forcedStructure = buildForcedEndpointStructure(part, groupCounts, profile.distribution);
+  if (forcedStructure.error) {
+    return { error: forcedStructure.error, questions: null, groupCounts, part };
+  }
+
+  let questions = forcedStructure.questions;
 
   if (questions.some((q) => q.point <= 0)) {
     return { error: `${part.label} 계산 결과에 0 이하 배점이 생깁니다.`, questions: null, groupCounts, part };
   }
 
-  questions = adjustToTarget(questions, part.targetTotal, part.scoreInterval).map((q) => ({
+  questions = questions.map((q) => ({
     ...q,
     partId: part.id,
     partLabel: part.label,

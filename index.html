@@ -4,13 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>고등학교 시험 배점 추천기</title>
-  <link rel="stylesheet" href="style.css?v=drag-swap-row">
+  <link rel="stylesheet" href="style.css?v=forced-endpoints">
 </head>
 <body>
   <div class="container">
     <header>
       <h1>고등학교 시험 배점 추천기</h1>
-      <p class="subtitle">선택형·서답형 문항 수와 배점 예시를 입력하면 유형별로 독립적인 배점안을 추천해 드립니다.</p>
+      <p class="subtitle">선택형·서답형 문항 수와 최고점·최하점을 입력하면 유형별로 독립적인 배점안을 추천해 드립니다.</p>
     </header>
 
     <section class="card input-section">
@@ -61,12 +61,12 @@
 
       <div class="anchors">
         <div class="field">
-          <label for="anchor1">선택형 배점 예시 1 <span class="hint">(필수, 상 최고문항 기준)</span></label>
-          <input type="number" id="anchor1" min="0.1" step="0.1" value="5.0">
+          <label for="anchor1">선택형 최고점 <span class="hint">(필수)</span></label>
+          <input type="number" id="anchor1" min="0.1" step="0.1" value="6.0">
         </div>
         <div class="field">
-          <label for="anchor2">선택형 배점 예시 2 <span class="hint">(선택, 하 최저문항 기준)</span></label>
-          <input type="number" id="anchor2" min="0.1" step="0.1" value="2.5" placeholder="비워두면 자동 계산">
+          <label for="anchor2">선택형 최하점 <span class="hint">(필수)</span></label>
+          <input type="number" id="anchor2" min="0.1" step="0.1" value="3.0">
         </div>
       </div>
 
@@ -122,12 +122,12 @@
 
         <div class="anchors">
           <div class="field">
-            <label for="written-anchor1">서답형 배점 예시 1 <span class="hint">(필수, 상 최고문항 기준)</span></label>
+            <label for="written-anchor1">서답형 최고점 <span class="hint">(필수)</span></label>
             <input type="number" id="written-anchor1" min="1" step="1" value="6">
           </div>
           <div class="field">
-            <label for="written-anchor2">서답형 배점 예시 2 <span class="hint">(선택, 하 최저문항 기준)</span></label>
-            <input type="number" id="written-anchor2" min="1" step="1" value="4" placeholder="비워두면 자동 계산">
+            <label for="written-anchor2">서답형 최하점 <span class="hint">(필수)</span></label>
+            <input type="number" id="written-anchor2" min="1" step="1" value="4">
           </div>
         </div>
 
@@ -154,7 +154,8 @@
 
       <p class="notice">
         고등학교 시험에서는 동점을 줄이기 위해 문항마다 차등 배점을 씁니다.
-        배점 예시는 기준점이며, 아래 추천안은 입력한 배점 종류 수를 유지한 채 배점별 문항 수 분포를 조정합니다.
+        최고점과 최하점은 반드시 지켜야 하는 값이며, 불가능한 경우 생성 불가 사유를 안내합니다.
+        아래 추천안은 입력한 배점 종류 수를 유지한 채 배점별 문항 수 분포를 조정합니다.
       </p>
 
       <button type="button" id="calculate-btn" class="primary-btn">배점 추천하기</button>
@@ -201,7 +202,7 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="script.js?v=drag-swap-row"></script>
+  <script src="script.js?v=forced-endpoints"></script>
 </body>
 </html>
 
