@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>고등학교 시험 배점 추천기</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>고등학교 시험 배점 추천기</h1>
+      <p class="subtitle">총 문항 수·난이도별 문항 수·배점 예시만 입력하면 문항별 배점안을 추천해 드립니다.</p>
+    </header>
+
+    <section class="card input-section">
+      <h2>시험 정보 입력</h2>
+
+      <div class="field">
+        <label for="total">총 문항 수</label>
+        <input type="number" id="total" min="1" value="20">
+      </div>
+
+      <div class="difficulty-counts">
+        <div class="field tier high">
+          <label for="count-high">상 난이도 문항 수</label>
+          <input type="number" id="count-high" min="0" value="5">
+        </div>
+        <div class="field tier mid">
+          <label for="count-mid">중 난이도 문항 수</label>
+          <input type="number" id="count-mid" min="0" value="10">
+        </div>
+        <div class="field tier low">
+          <label for="count-low">하 난이도 문항 수</label>
+          <input type="number" id="count-low" min="0" value="5">
+        </div>
+      </div>
+
+      <p id="sum-status" class="sum-status ok">자동 합계: 20 / 20</p>
+
+      <div class="anchors">
+        <div class="field">
+          <label for="anchor1">배점 예시 1 <span class="hint">(필수, 상 최고문항 기준)</span></label>
+          <input type="number" id="anchor1" min="0.1" step="0.1" value="5.0">
+        </div>
+        <div class="field">
+          <label for="anchor2">배점 예시 2 <span class="hint">(선택, 하 최저문항 기준)</span></label>
+          <input type="number" id="anchor2" min="0.1" step="0.1" value="2.5" placeholder="비워두면 자동 계산">
+        </div>
+      </div>
+
+      <details class="options-panel">
+        <summary>세부 옵션</summary>
+        <div class="field">
+          <label for="between-gap">난이도 간 최소 간격</label>
+          <input type="number" id="between-gap" value="0.3" step="0.1" min="0.1">
+        </div>
+        <p class="options-label">난이도별 배점 종류 수</p>
+        <div class="options-grid group-counts">
+          <div class="field tier high">
+            <label for="group-high">상</label>
+            <input type="number" id="group-high" min="1" value="3">
+          </div>
+          <div class="field tier mid">
+            <label for="group-mid">중</label>
+            <input type="number" id="group-mid" min="1" value="4">
+          </div>
+          <div class="field tier low">
+            <label for="group-low">하</label>
+            <input type="number" id="group-low" min="1" value="3">
+          </div>
+        </div>
+        <p class="options-hint">각 값은 해당 난이도 문항 수 이하여야 합니다. 문항 내 배점 간격은 0.1점 고정입니다.</p>
+      </details>
+
+      <p class="notice">
+        고등학교 시험에서는 동점을 줄이기 위해 문항마다 차등 배점을 씁니다.
+        배점 예시는 기준점이며, 아래 추천안이 실제 적용값입니다.
+      </p>
+
+      <button type="button" id="calculate-btn" class="primary-btn">배점 추천하기</button>
+      <p id="error-msg" class="error-msg" hidden></p>
+    </section>
+
+    <section id="result-section" class="card result-section" hidden>
+      <h2>추천안 비교 (3가지)</h2>
+      <p class="section-desc">마음에 드는 안을 선택한 뒤, 문항별 배점을 직접 수정할 수 있습니다.</p>
+      <div id="proposals-grid" class="proposals-grid"></div>
+    </section>
+
+    <section id="editor-section" class="card editor-section" hidden>
+      <div class="editor-header">
+        <h2>배점 편집 — <span id="selected-label"></span></h2>
+        <div class="editor-actions">
+          <button type="button" id="export-btn" class="secondary-btn">엑셀로보내기</button>
+          <button type="button" id="back-btn" class="secondary-btn">다른 안 고르기</button>
+        </div>
+      </div>
+
+      <div id="validation-panel" class="validation-panel"></div>
+      <div id="editor-groups" class="proposal-groups editor-groups"></div>
+
+      <div class="table-wrap">
+        <table class="editor-table">
+          <thead>
+            <tr>
+              <th>문항</th>
+              <th>난이도 (수정 가능)</th>
+              <th>배점 (직접 수정)</th>
+            </tr>
+          </thead>
+          <tbody id="editor-body"></tbody>
+        </table>
+      </div>
+
+      <p class="disclaimer">배점을 수정하면 위 검증 결과가 즉시 갱신됩니다.</p>
+    </section>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
