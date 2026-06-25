@@ -10,17 +10,18 @@
   <div class="container">
     <header>
       <h1>고등학교 시험 배점 추천기</h1>
-      <p class="subtitle">총 문항 수·난이도별 문항 수·배점 예시만 입력하면 문항별 배점안을 추천해 드립니다.</p>
+      <p class="subtitle">선택형·서답형 문항 수와 배점 예시를 입력하면 유형별로 독립적인 배점안을 추천해 드립니다.</p>
     </header>
 
     <section class="card input-section">
       <h2>시험 정보 입력</h2>
 
       <div class="field">
-        <label for="total">총 문항 수</label>
+        <label for="total">선택형 총 문항 수</label>
         <input type="number" id="total" min="1" value="20">
       </div>
 
+      <p class="options-label">선택형 난이도별 문항 수</p>
       <div class="difficulty-counts">
         <div class="field tier high">
           <label for="count-high">상 난이도 문항 수</label>
@@ -36,15 +37,35 @@
         </div>
       </div>
 
-      <p id="sum-status" class="sum-status ok">자동 합계: 20 / 20</p>
+      <p id="sum-status" class="sum-status ok">선택형 자동 합계: 20 / 20</p>
+
+      <div class="field checkbox-field">
+        <label class="checkbox-label" for="written-enabled">
+          <input type="checkbox" id="written-enabled">
+          서답형(서술형) 문항 별도 추가
+        </label>
+        <p class="options-hint">서답형을 켜면 총점 100점 안에서 선택형과 서답형 목표 점수를 나눠 계산합니다.</p>
+      </div>
+
+      <div id="score-split" class="score-split" hidden>
+        <div class="field">
+          <label for="choice-score-total">선택형 목표 점수</label>
+          <input type="number" id="choice-score-total" min="0.1" step="0.1" value="85.0">
+        </div>
+        <div class="field">
+          <label for="written-score-total">서답형 목표 점수</label>
+          <input type="number" id="written-score-total" min="0.1" step="0.1" value="15.0">
+        </div>
+        <p id="score-split-status" class="sum-status ok">선택형·서답형 총점: 100.0 / 100.0</p>
+      </div>
 
       <div class="anchors">
         <div class="field">
-          <label for="anchor1">배점 예시 1 <span class="hint">(필수, 상 최고문항 기준)</span></label>
+          <label for="anchor1">선택형 배점 예시 1 <span class="hint">(필수, 상 최고문항 기준)</span></label>
           <input type="number" id="anchor1" min="0.1" step="0.1" value="5.0">
         </div>
         <div class="field">
-          <label for="anchor2">배점 예시 2 <span class="hint">(선택, 하 최저문항 기준)</span></label>
+          <label for="anchor2">선택형 배점 예시 2 <span class="hint">(선택, 하 최저문항 기준)</span></label>
           <input type="number" id="anchor2" min="0.1" step="0.1" value="2.5" placeholder="비워두면 자동 계산">
         </div>
       </div>
@@ -55,7 +76,7 @@
           <label for="between-gap">난이도 간 최소 간격</label>
           <input type="number" id="between-gap" value="0.3" step="0.1" min="0.1">
         </div>
-        <p class="options-label">난이도별 배점 종류 수</p>
+        <p class="options-label">선택형 난이도별 배점 종류 수</p>
         <div class="options-grid group-counts">
           <div class="field tier high">
             <label for="group-high">상</label>
@@ -73,9 +94,71 @@
         <p class="options-hint">각 값은 해당 난이도 문항 수 이하여야 합니다. 문항 내 배점 간격은 0.1점 고정입니다.</p>
       </details>
 
+      <section id="written-options" class="written-options" hidden>
+        <h3>서답형 정보 입력</h3>
+
+        <div class="field">
+          <label for="written-total">서답형 총 문항 수</label>
+          <input type="number" id="written-total" min="1" value="3">
+        </div>
+
+        <p class="options-label">서답형 난이도별 문항 수</p>
+        <div class="difficulty-counts">
+          <div class="field tier high">
+            <label for="written-count-high">상 난이도 문항 수</label>
+            <input type="number" id="written-count-high" min="0" value="1">
+          </div>
+          <div class="field tier mid">
+            <label for="written-count-mid">중 난이도 문항 수</label>
+            <input type="number" id="written-count-mid" min="0" value="1">
+          </div>
+          <div class="field tier low">
+            <label for="written-count-low">하 난이도 문항 수</label>
+            <input type="number" id="written-count-low" min="0" value="1">
+          </div>
+        </div>
+
+        <p id="written-sum-status" class="sum-status ok">서답형 자동 합계: 3 / 3</p>
+
+        <div class="anchors">
+          <div class="field">
+            <label for="written-anchor1">서답형 배점 예시 1 <span class="hint">(필수, 상 최고문항 기준)</span></label>
+            <input type="number" id="written-anchor1" min="0.1" step="0.1" value="6.0">
+          </div>
+          <div class="field">
+            <label for="written-anchor2">서답형 배점 예시 2 <span class="hint">(선택, 하 최저문항 기준)</span></label>
+            <input type="number" id="written-anchor2" min="0.1" step="0.1" value="4.0" placeholder="비워두면 자동 계산">
+          </div>
+        </div>
+
+        <details class="options-panel">
+          <summary>서답형 세부 옵션</summary>
+          <div class="field">
+            <label for="written-between-gap">서답형 난이도 간 최소 간격</label>
+            <input type="number" id="written-between-gap" value="0.3" step="0.1" min="0.1">
+          </div>
+          <p class="options-label">서답형 난이도별 배점 종류 수</p>
+          <div class="options-grid group-counts">
+            <div class="field tier high">
+              <label for="written-group-high">상</label>
+              <input type="number" id="written-group-high" min="1" value="1">
+            </div>
+            <div class="field tier mid">
+              <label for="written-group-mid">중</label>
+              <input type="number" id="written-group-mid" min="1" value="1">
+            </div>
+            <div class="field tier low">
+              <label for="written-group-low">하</label>
+              <input type="number" id="written-group-low" min="1" value="1">
+            </div>
+          </div>
+          <p class="options-hint">서답형 난이도와 배점은 선택형과 별도로 계산됩니다.</p>
+        </details>
+      </section>
+
       <p class="notice">
         고등학교 시험에서는 동점을 줄이기 위해 문항마다 차등 배점을 씁니다.
-        배점 예시는 기준점이며, 아래 추천안이 실제 적용값입니다.
+        배점 예시는 기준점이며, 아래 추천안은 입력한 배점 종류 수를 유지한 채 배점별 문항 수 분포를 조정합니다.
       </p>
 
       <button type="button" id="calculate-btn" class="primary-btn">배점 추천하기</button>
@@ -84,7 +167,7 @@
 
     <section id="result-section" class="card result-section" hidden>
       <h2>추천안 비교 (3가지)</h2>
-      <p class="section-desc">마음에 드는 안을 선택한 뒤, 문항별 배점을 직접 수정할 수 있습니다.</p>
+      <p class="section-desc">마음에 드는 안을 선택한 뒤, 유형·문항별 배점을 직접 수정할 수 있습니다.</p>
       <div id="proposals-grid" class="proposals-grid"></div>
     </section>
 
@@ -104,6 +187,7 @@
         <table class="editor-table">
           <thead>
             <tr>
+              <th>유형</th>
               <th>문항</th>
               <th>난이도 (수정 가능)</th>
               <th>배점 (직접 수정)</th>

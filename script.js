@@ -1,85 +1,208 @@
 const TIER_ORDER = ["상", "중", "하"];
 const TIER_KEYS = { 상: "high", 중: "mid", 하: "low" };
 const WITHIN_INTERVAL = 0.1;
+const TOTAL_SCORE = 100;
 
 const VARIANT_PROFILES = [
-  { id: "fine", label: "안 A · 세밀형", groupOffset: 1 },
-  { id: "balanced", label: "안 B · 균형형", groupOffset: 0 },
-  { id: "simple", label: "안 C · 단순형", groupOffset: -1 },
+  { id: "front", label: "안 A · 고배점 문항 강화형", distribution: "front" },
+  { id: "balanced", label: "안 B · 균형형", distribution: "balanced" },
+  { id: "back", label: "안 C · 저배점 문항 보강형", distribution: "back" },
 ];
 
 const state = {
   variants: [],
   selectedVariantId: null,
   selectedQuestions: [],
-  betweenGap: 0.3,
+  partTargets: {},
+  partGaps: {},
 };
 
 function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
-function readInputs() {
-  const anchor2Raw = document.getElementById("anchor2").value.trim();
+function readTierCounts(prefix) {
   return {
-    total: parseInt(document.getElementById("total").value, 10),
-    counts: {
-      상: parseInt(document.getElementById("count-high").value, 10) || 0,
-      중: parseInt(document.getElementById("count-mid").value, 10) || 0,
-      하: parseInt(document.getElementById("count-low").value, 10) || 0,
-    },
-    anchor1: parseFloat(document.getElementById("anchor1").value),
-    anchor2: anchor2Raw === "" ? null : parseFloat(anchor2Raw),
-    groupCounts: {
-      상: parseInt(document.getElementById("group-high").value, 10) || 3,
-      중: parseInt(document.getElementById("group-mid").value, 10) || 4,
-      하: parseInt(document.getElementById("group-low").value, 10) || 3,
-    },
-    betweenGap: parseFloat(document.getElementById("between-gap").value),
+    상: parseInt(document.getElementById(`${prefix}-high`).value, 10) || 0,
+    중: parseInt(document.getElementById(`${prefix}-mid`).value, 10) || 0,
+    하: parseInt(document.getElementById(`${prefix}-low`).value, 10) || 0,
   };
 }
 
-function resolveGroupCount(baseCount, questionCount, offset) {
-  if (questionCount <= 0) return 0;
-  if (questionCount === 1) return 1;
-  let n = baseCount + offset;
-  if (offset < 0) n = Math.max(2, n);
-  n = Math.max(1, n);
-  return Math.min(n, questionCount);
+function readGroupCounts(prefix) {
+  return {
+    상: parseInt(document.getElementById(`${prefix}-high`).value, 10) || 3,
+    중: parseInt(document.getElementById(`${prefix}-mid`).value, 10) || 4,
+    하: parseInt(document.getElementById(`${prefix}-low`).value, 10) || 3,
+  };
 }
 
-function applyProfileGroupCounts(input, profile) {
+function readOptionalPoint(id) {
+  const raw = document.getElementById(id).value.trim();
+  return raw === "" ? null : parseFloat(raw);
+}
+
+function readInputs() {
+  const writtenEnabled = document.getElementById("written-enabled").checked;
+  const choiceTarget = writtenEnabled ? parseFloat(document.getElementById("choice-score-total").value) : TOTAL_SCORE;
+  const writtenTarget = writtenEnabled ? parseFloat(document.getElementById("written-score-total").value) : 0;
+  const parts = [
+    {
+      id: "choice",
+      label: "선택형",
+      total: parseInt(document.getElementById("total").value, 10),
+      counts: readTierCounts("count"),
+      targetTotal: choiceTarget,
+      anchor1: parseFloat(document.getElementById("anchor1").value),
+      anchor2: readOptionalPoint("anchor2"),
+      groupCounts: readGroupCounts("group"),
+      betweenGap: parseFloat(document.getElementById("between-gap").value),
+    },
+  ];
+
+  if (writtenEnabled) {
+    parts.push({
+      id: "written",
+      label: "서답형",
+      total: parseInt(document.getElementById("written-total").value, 10),
+      counts: readTierCounts("written-count"),
+      targetTotal: writtenTarget,
+      anchor1: parseFloat(document.getElementById("written-anchor1").value),
+      anchor2: readOptionalPoint("written-anchor2"),
+      groupCounts: readGroupCounts("written-group"),
+      betweenGap: parseFloat(document.getElementById("written-between-gap").value),
+    });
+  }
+
+  return {
+    writtenEnabled,
+    choiceTarget,
+    writtenTarget,
+    parts,
+  };
+}
+
+function getPartGroupCounts(part) {
   const result = {};
   for (const tier of TIER_ORDER) {
-    result[tier] = resolveGroupCount(input.groupCounts[tier], input.counts[tier], profile.groupOffset);
+    result[tier] = part.counts[tier] > 0 ? part.groupCounts[tier] : 0;
   }
   return result;
 }
 
 function updateSumStatus() {
-  const { total, counts } = readInputs();
-  const sum = counts.상 + counts.중 + counts.하;
+  const input = readInputs();
+  const choice = input.parts[0];
+  const sum = choice.counts.상 + choice.counts.중 + choice.counts.하;
   const el = document.getElementById("sum-status");
-  if (sum === total) {
-    el.textContent = `자동 합계: ${sum} / ${total}`;
+  if (sum === choice.total) {
+    el.textContent = `선택형 자동 합계: ${sum} / ${choice.total}`;
     el.className = "sum-status ok";
   } else {
-    el.textContent = `자동 합계: ${sum} / ${total} — 불일치!`;
+    el.textContent = `선택형 자동 합계: ${sum} / ${choice.total} — 불일치!`;
+    el.className = "sum-status err";
+  }
+
+  updateWrittenPanel(input);
+  updateScoreSplitStatus(input);
+}
+
+function updateWrittenPanel(input = readInputs()) {
+  const panel = document.getElementById("written-options");
+  const scoreSplit = document.getElementById("score-split");
+  panel.hidden = !input.writtenEnabled;
+  scoreSplit.hidden = !input.writtenEnabled;
+
+  const el = document.getElementById("written-sum-status");
+  if (!input.writtenEnabled) {
+    el.textContent = "";
+    el.className = "sum-status ok";
+    return;
+  }
+
+  const written = input.parts.find((part) => part.id === "written");
+  const sum = written.counts.상 + written.counts.중 + written.counts.하;
+  if (sum === written.total) {
+    el.textContent = `서답형 자동 합계: ${sum} / ${written.total}`;
+    el.className = "sum-status ok";
+  } else {
+    el.textContent = `서답형 자동 합계: ${sum} / ${written.total} — 불일치!`;
     el.className = "sum-status err";
   }
 }
 
-function generateTierGroups(maxPoint, questionCount, groupCount) {
+function updateScoreSplitStatus(input = readInputs()) {
+  const el = document.getElementById("score-split-status");
+  if (!input.writtenEnabled) {
+    el.textContent = "총점: 100.0점";
+    el.className = "sum-status ok";
+    return;
+  }
+
+  const sum = round1(input.choiceTarget + input.writtenTarget);
+  if (Math.abs(sum - TOTAL_SCORE) < 0.05) {
+    el.textContent = `선택형·서답형 총점: ${sum.toFixed(1)} / ${TOTAL_SCORE.toFixed(1)}`;
+    el.className = "sum-status ok";
+  } else {
+    el.textContent = `선택형·서답형 총점: ${sum.toFixed(1)} / ${TOTAL_SCORE.toFixed(1)} — 불일치!`;
+    el.className = "sum-status err";
+  }
+}
+
+function balancedOrder(size) {
+  const middle = Math.floor((size - 1) / 2);
+  const order = [middle];
+  for (let offset = 1; order.length < size; offset++) {
+    const left = middle - offset;
+    const right = middle + offset;
+    if (right < size) order.push(right);
+    if (left >= 0) order.push(left);
+  }
+  return order;
+}
+
+function distributeQuestionCounts(questionCount, numGroups, distribution) {
+  if (numGroups <= 0) return [];
+  if (numGroups === 1) return [questionCount];
+
+  const counts = new Array(numGroups).fill(1);
+  let remaining = questionCount - numGroups;
+  const orders = {
+    front: [...Array(numGroups).keys()],
+    balanced: balancedOrder(numGroups),
+    back: [...Array(numGroups).keys()].reverse(),
+  };
+  const order = orders[distribution] || orders.balanced;
+
+  for (let i = 0; remaining > 0; i++, remaining--) {
+    counts[order[i % order.length]]++;
+  }
+
+  // When the division is perfectly even, nudge the two non-balanced variants so
+  // the three proposals still differ by 문항 수 분포, not by 배점 종류 수.
+  if (questionCount > numGroups && questionCount % numGroups === 0) {
+    if (distribution === "front" && counts[numGroups - 1] > 1) {
+      counts[0]++;
+      counts[numGroups - 1]--;
+    } else if (distribution === "back" && counts[0] > 1) {
+      counts[numGroups - 1]++;
+      counts[0]--;
+    }
+  }
+
+  return counts;
+}
+
+function generateTierGroups(maxPoint, questionCount, groupCount, distribution) {
   if (questionCount <= 0) return [];
 
   const numGroups = Math.min(groupCount, questionCount);
-  const base = Math.floor(questionCount / numGroups);
-  const extra = questionCount % numGroups;
+  const counts = distributeQuestionCounts(questionCount, numGroups, distribution);
   const groups = [];
 
   for (let i = 0; i < numGroups; i++) {
     const point = round1(maxPoint - i * WITHIN_INTERVAL);
-    const assign = base + (i >= numGroups - extra ? 1 : 0);
+    const assign = counts[i];
     groups.push({ point, count: assign });
   }
 
@@ -88,11 +211,11 @@ function generateTierGroups(maxPoint, questionCount, groupCount) {
 
 function expandGroupsToQuestions(groups, tier) {
   const questions = [];
-  for (const { point, count } of groups) {
+  groups.forEach(({ point, count }, groupIndex) => {
     for (let i = 0; i < count; i++) {
-      questions.push({ tier, point });
+      questions.push({ tier, point, scoreGroupId: `${tier}-${groupIndex}` });
     }
-  }
+  });
   return questions;
 }
 
@@ -105,14 +228,14 @@ function minPointOfGroups(groups) {
   return groups[groups.length - 1].point;
 }
 
-function buildInitialStructure(input, groupCounts, betweenGap) {
-  const { counts, anchor1, anchor2 } = input;
+function buildInitialStructure(part, groupCounts, betweenGap, distribution) {
+  const { counts, anchor1, anchor2 } = part;
   const tierGroups = [];
 
   if (counts.상 > 0) {
     tierGroups.push({
       tier: "상",
-      groups: generateTierGroups(anchor1, counts.상, groupCounts.상),
+      groups: generateTierGroups(anchor1, counts.상, groupCounts.상, distribution),
     });
   }
 
@@ -126,7 +249,7 @@ function buildInitialStructure(input, groupCounts, betweenGap) {
     }
     tierGroups.push({
       tier: "중",
-      groups: generateTierGroups(maxM, counts.중, groupCounts.중),
+      groups: generateTierGroups(maxM, counts.중, groupCounts.중, distribution),
     });
   }
 
@@ -143,7 +266,7 @@ function buildInitialStructure(input, groupCounts, betweenGap) {
     }
     tierGroups.push({
       tier: "하",
-      groups: generateTierGroups(maxL, counts.하, groupCounts.하),
+      groups: generateTierGroups(maxL, counts.하, groupCounts.하, distribution),
     });
   }
 
@@ -182,52 +305,117 @@ function checkOrdering(questions, betweenGap) {
   return questions.every((q) => q.point > 0);
 }
 
-function adjustTo100(questions) {
-  const n = questions.length;
-  let pts = questions.map((q) => q.point);
-  let sum = round1(pts.reduce((a, b) => a + b, 0));
-  let delta = round1(100 - sum);
-
-  if (Math.abs(delta) < 0.05) {
-    return questions.map((q, i) => ({ ...q, point: pts[i] }));
+function preservesGroupCounts(questions, groupCounts) {
+  for (const tier of TIER_ORDER) {
+    const tierQuestions = questions.filter((q) => q.tier === tier);
+    if (!tierQuestions.length) continue;
+    const uniquePoints = new Set(tierQuestions.map((q) => q.point.toFixed(1)));
+    if (uniquePoints.size !== groupCounts[tier]) return false;
   }
-
-  const perQ = delta / n;
-  pts = pts.map((p) => round1(p + perQ));
-  let remainder = round1(100 - round1(pts.reduce((a, b) => a + b, 0)));
-
-  let guard = 0;
-  while (Math.abs(remainder) >= 0.05 && guard < n * 200) {
-    const idx = remainder > 0 ? guard % n : n - 1 - (guard % n);
-    const step = remainder > 0 ? 0.1 : -0.1;
-    const next = round1(pts[idx] + step);
-    if (next > 0) {
-      pts[idx] = next;
-      remainder = round1(remainder - step);
-    }
-    guard++;
-  }
-
-  return questions.map((q, i) => ({ ...q, point: pts[i] }));
+  return true;
 }
 
-function validateInput(input, groupCounts, betweenGap) {
-  const { total, counts, anchor1, anchor2 } = input;
+function collectScoreGroups(questions) {
+  const groups = [];
+  const byId = new Map();
+  for (const q of questions) {
+    if (!byId.has(q.scoreGroupId)) {
+      const group = { id: q.scoreGroupId, point: q.point, count: 0 };
+      byId.set(q.scoreGroupId, group);
+      groups.push(group);
+    }
+    byId.get(q.scoreGroupId).count++;
+  }
+  return groups;
+}
+
+function sumGroups(groups) {
+  return round1(groups.reduce((sum, group) => sum + group.point * group.count, 0));
+}
+
+function findGroupAdjustmentSteps(groups, units) {
+  if (units === 0) return new Array(groups.length).fill(0);
+
+  const direction = units > 0 ? 1 : -1;
+  const target = Math.abs(units);
+  let states = new Map([[0, { steps: new Array(groups.length).fill(0), cost: 0 }]]);
+
+  groups.forEach((group, groupIndex) => {
+    const nextStates = new Map(states);
+    const priorityCost = direction > 0 ? groupIndex : groups.length - 1 - groupIndex;
+    const maxSteps =
+      direction > 0
+        ? Math.ceil(target / group.count) + 2
+        : Math.max(0, Math.round(group.point * 10) - 1);
+
+    for (const [sum, state] of states.entries()) {
+      for (let stepCount = 1; stepCount <= maxSteps; stepCount++) {
+        const nextSum = sum + group.count * stepCount;
+        if (nextSum > target) break;
+        const nextCost = state.cost + priorityCost * stepCount;
+        const existing = nextStates.get(nextSum);
+        if (existing && existing.cost <= nextCost) continue;
+
+        const nextSteps = state.steps.slice();
+        nextSteps[groupIndex] = stepCount * direction;
+        nextStates.set(nextSum, { steps: nextSteps, cost: nextCost });
+      }
+    }
+
+    states = nextStates;
+  });
+
+  const result = states.get(target);
+  return result ? result.steps : null;
+}
+
+function adjustToTarget(questions, targetTotal) {
+  if (!questions.length) return questions;
+
+  const groups = collectScoreGroups(questions);
+  let delta = round1(targetTotal - sumGroups(groups));
+
+  if (Math.abs(delta) >= 0.05) {
+    const uniformShift = round1(delta / questions.length);
+    if (uniformShift !== 0 && groups.every((group) => round1(group.point + uniformShift) > 0)) {
+      groups.forEach((group) => {
+        group.point = round1(group.point + uniformShift);
+      });
+    }
+  }
+
+  delta = round1(targetTotal - sumGroups(groups));
+  const units = Math.round(delta * 10);
+  const steps = findGroupAdjustmentSteps(groups, units);
+
+  if (steps) {
+    groups.forEach((group, index) => {
+      group.point = round1(group.point + steps[index] * WITHIN_INTERVAL);
+    });
+  }
+
+  const pointByGroupId = new Map(groups.map((group) => [group.id, group.point]));
+  return questions.map((q) => ({ ...q, point: pointByGroupId.get(q.scoreGroupId) }));
+}
+
+function validatePartInput(part, groupCounts) {
+  const { label, total, counts, targetTotal, anchor1, anchor2, betweenGap } = part;
   const sum = counts.상 + counts.중 + counts.하;
 
-  if (!Number.isFinite(total) || total < 1) return "총 문항 수를 1 이상으로 입력해 주세요.";
-  if (sum !== total) return `난이도별 문항 수 합(${sum})이 총 문항 수(${total})와 일치하지 않습니다.`;
-  if (sum === 0) return "문항 수가 0입니다.";
-  if (!Number.isFinite(anchor1) || anchor1 <= 0) return "배점 예시 1을 0보다 크게 입력해 주세요.";
-  if (anchor2 !== null && (!Number.isFinite(anchor2) || anchor2 <= 0)) return "배점 예시 2가 올바르지 않습니다.";
-  if (anchor2 !== null && anchor2 >= anchor1) return "배점 예시 2는 예시 1보다 작아야 합니다.";
-  if (!Number.isFinite(betweenGap) || betweenGap <= 0) return "난이도 간 최소 간격을 0보다 크게 입력해 주세요.";
+  if (!Number.isFinite(total) || total < 1) return `${label} 총 문항 수를 1 이상으로 입력해 주세요.`;
+  if (sum !== total) return `${label} 난이도별 문항 수 합(${sum})이 총 문항 수(${total})와 일치하지 않습니다.`;
+  if (sum === 0) return `${label} 문항 수가 0입니다.`;
+  if (!Number.isFinite(targetTotal) || targetTotal <= 0) return `${label} 총점을 0보다 크게 입력해 주세요.`;
+  if (!Number.isFinite(anchor1) || anchor1 <= 0) return `${label} 배점 예시 1을 0보다 크게 입력해 주세요.`;
+  if (anchor2 !== null && (!Number.isFinite(anchor2) || anchor2 <= 0)) return `${label} 배점 예시 2가 올바르지 않습니다.`;
+  if (anchor2 !== null && anchor2 >= anchor1) return `${label} 배점 예시 2는 예시 1보다 작아야 합니다.`;
+  if (!Number.isFinite(betweenGap) || betweenGap <= 0) return `${label} 난이도 간 최소 간격을 0보다 크게 입력해 주세요.`;
 
   for (const tier of TIER_ORDER) {
     if (counts[tier] === 0) continue;
     const gc = groupCounts[tier];
-    if (!Number.isFinite(gc) || gc < 1) return `${tier} 난이도 배점 종류 수는 1 이상이어야 합니다.`;
-    if (gc > counts[tier]) return `${tier} 난이도 배점 종류 수(${gc})가 문항 수(${counts[tier]})보다 많습니다.`;
+    if (!Number.isFinite(gc) || gc < 1) return `${label} ${tier} 난이도 배점 종류 수는 1 이상이어야 합니다.`;
+    if (gc > counts[tier]) return `${label} ${tier} 난이도 배점 종류 수(${gc})가 문항 수(${counts[tier]})보다 많습니다.`;
   }
 
   const minNeeded =
@@ -241,7 +429,21 @@ function validateInput(input, groupCounts, betweenGap) {
     (counts.상 > 0 && counts.하 > 0 && counts.중 === 0 ? betweenGap : 0);
 
   if (anchor1 - minNeeded - gaps < 0.5) {
-    return "문항 수·배점 종류 대비 배점 예시가 너무 낮습니다. 예시 배점을 높이거나 배점 종류 수를 줄여 주세요.";
+    return `${label} 문항 수·배점 종류 대비 배점 예시가 너무 낮습니다. 예시 배점을 높이거나 배점 종류 수를 줄여 주세요.`;
+  }
+
+  return null;
+}
+
+function validateFullInput(input) {
+  const targetSum = round1(input.parts.reduce((sum, part) => sum + part.targetTotal, 0));
+  if (Math.abs(targetSum - TOTAL_SCORE) >= 0.05) {
+    return `선택형·서답형 총점 합이 ${targetSum.toFixed(1)}점입니다. ${TOTAL_SCORE.toFixed(1)}점이 되도록 조정해 주세요.`;
+  }
+
+  for (const part of input.parts) {
+    const err = validatePartInput(part, getPartGroupCounts(part));
+    if (err) return err;
   }
 
   return null;
@@ -253,38 +455,76 @@ function formatGroupCountsMeta(groupCounts, counts) {
     .join(" / ");
 }
 
-function recommendVariant(input, profile) {
-  const groupCounts = applyProfileGroupCounts(input, profile);
-  const betweenGap = input.betweenGap;
+function recommendPart(part, profile) {
+  const groupCounts = getPartGroupCounts(part);
+  const betweenGap = part.betweenGap;
 
-  const err = validateInput(input, groupCounts, betweenGap);
-  if (err) return { ...profile, error: err, questions: null, groupCounts };
+  const err = validatePartInput(part, groupCounts);
+  if (err) return { error: err, questions: null, groupCounts, part };
 
-  let questions = buildInitialStructure(input, groupCounts, betweenGap);
+  let questions = buildInitialStructure(part, groupCounts, betweenGap, profile.distribution);
 
   if (questions.some((q) => q.point <= 0)) {
-    return { ...profile, error: "계산 결과에 0 이하 배점이 생깁니다.", questions: null, groupCounts, betweenGap };
+    return { error: `${part.label} 계산 결과에 0 이하 배점이 생깁니다.`, questions: null, groupCounts, part };
   }
 
-  questions = adjustTo100(questions);
+  questions = adjustToTarget(questions, part.targetTotal).map((q) => ({
+    ...q,
+    partId: part.id,
+    partLabel: part.label,
+  }));
+
+  if (!preservesGroupCounts(questions, groupCounts)) {
+    return { error: `${part.label} 입력한 배점 종류 수를 유지할 수 없습니다. 배점 예시나 배점 종류 수를 조정해 주세요.`, questions: null, groupCounts, part };
+  }
 
   if (!checkOrdering(questions, betweenGap)) {
-    return { ...profile, error: "상>중>하 순서 또는 난이도 간 간격을 유지할 수 없습니다.", questions: null, groupCounts, betweenGap };
+    return { error: `${part.label} 상>중>하 순서 또는 난이도 간 간격을 유지할 수 없습니다.`, questions: null, groupCounts, part };
   }
 
   const totalSum = round1(questions.reduce((a, q) => a + q.point, 0));
-  if (Math.abs(totalSum - 100) >= 0.05) {
-    return { ...profile, error: "100점 맞춤에 실패했습니다.", questions: null, groupCounts, betweenGap };
+  if (Math.abs(totalSum - part.targetTotal) >= 0.05) {
+    return { error: `${part.label} ${part.targetTotal.toFixed(1)}점 맞춤에 실패했습니다.`, questions: null, groupCounts, part };
+  }
+
+  return {
+    error: null,
+    questions,
+    part,
+    groupCounts,
+    betweenGap,
+    stats: tierStats(questions),
+    groupSummary: summarizeByGroups(questions),
+  };
+}
+
+function recommendVariant(input, profile) {
+  const err = validateFullInput(input);
+  if (err) return { ...profile, error: err, questions: null, partResults: [] };
+
+  const partResults = [];
+  let questions = [];
+
+  for (const part of input.parts) {
+    const result = recommendPart(part, profile);
+    partResults.push(result);
+    if (result.error) {
+      return { ...profile, error: result.error, questions: null, partResults };
+    }
+    questions = questions.concat(result.questions);
+  }
+
+  const totalSum = round1(questions.reduce((a, q) => a + q.point, 0));
+  if (Math.abs(totalSum - TOTAL_SCORE) >= 0.05) {
+    return { ...profile, error: "선택형·서답형 합산 100점 맞춤에 실패했습니다.", questions: null, partResults };
   }
 
   return {
     ...profile,
     error: null,
     questions,
-    groupCounts,
-    betweenGap,
-    stats: tierStats(questions),
-    groupSummary: summarizeByGroups(questions),
+    partResults,
+    totalSum,
   };
 }
 
@@ -352,13 +592,33 @@ function renderGroupSummaryHtml(groupSummary) {
     .join("");
 }
 
+function renderPartResultHtml(partResult) {
+  const { part, stats, groupCounts, betweenGap, groupSummary } = partResult;
+  const badges = TIER_ORDER.filter((t) => stats[t])
+    .map(
+      (t) =>
+        `<span class="tier-badge ${TIER_KEYS[t]}">${t} ${stats[t].count}문항 · ${stats[t].max}~${stats[t].min}점 · 소계 ${stats[t].subtotal}점</span>`
+    )
+    .join("");
+
+  return `
+    <div class="part-result">
+      <div class="part-result-head">
+        <strong>${part.label}</strong>
+        <span>${part.total}문항 · ${part.targetTotal.toFixed(1)}점</span>
+      </div>
+      <div class="meta">난이도 간 ${betweenGap}점 · ${formatGroupCountsMeta(groupCounts, part.counts)}</div>
+      <div class="tier-summary">${badges}</div>
+      <div class="proposal-groups">${renderGroupSummaryHtml(groupSummary)}</div>
+    </div>`;
+}
+
 function renderProposals(variants) {
   const section = document.getElementById("result-section");
   const editorSection = document.getElementById("editor-section");
   section.hidden = false;
   editorSection.hidden = true;
 
-  const input = readInputs();
   const grid = document.getElementById("proposals-grid");
   grid.innerHTML = variants
     .map((v) => {
@@ -371,23 +631,14 @@ function renderProposals(variants) {
         </article>`;
       }
 
-      const totalSum = round1(v.questions.reduce((a, q) => a + q.point, 0));
-      const badges = TIER_ORDER.filter((t) => v.stats[t])
-        .map(
-          (t) =>
-            `<span class="tier-badge ${TIER_KEYS[t]}">${t} ${v.stats[t].count}문항 · ${v.stats[t].max}~${v.stats[t].min}점 · 소계 ${v.stats[t].subtotal}점</span>`
-        )
-        .join("");
-
       return `
       <article class="proposal-card" data-variant="${v.id}">
         <h3>${v.label}</h3>
         <div class="proposal-summary">
-          <div class="total">총점: ${totalSum.toFixed(1)}점</div>
-          <div class="meta">난이도 간 ${v.betweenGap}점 · ${formatGroupCountsMeta(v.groupCounts, input.counts)}</div>
-          <div class="tier-summary">${badges}</div>
+          <div class="total">총점: ${v.totalSum.toFixed(1)}점</div>
+          <div class="meta">입력한 배점 종류 수는 유지하고, 배점별 문항 수 분포만 조정합니다.</div>
         </div>
-        <div class="proposal-groups">${renderGroupSummaryHtml(v.groupSummary)}</div>
+        <div class="part-results">${v.partResults.map(renderPartResultHtml).join("")}</div>
         <button type="button" class="select-btn" data-variant="${v.id}">이 안 선택하기</button>
       </article>`;
     })
@@ -404,7 +655,12 @@ function selectProposal(variantId) {
 
   state.selectedVariantId = variantId;
   state.selectedQuestions = variant.questions.map((q) => ({ ...q }));
-  state.betweenGap = variant.betweenGap;
+  state.partTargets = {};
+  state.partGaps = {};
+  variant.partResults.forEach((partResult) => {
+    state.partTargets[partResult.part.id] = partResult.part.targetTotal;
+    state.partGaps[partResult.part.id] = partResult.part.betweenGap;
+  });
 
   document.getElementById("result-section").hidden = true;
   document.getElementById("editor-section").hidden = false;
@@ -420,7 +676,7 @@ function hasMoreThanOneDecimal(value) {
   return s.length - dot - 1 > 1;
 }
 
-function validateQuestions(questions, betweenGap) {
+function validateQuestions(questions, partTargets, partGaps) {
   const issues = [];
 
   for (let i = 0; i < questions.length; i++) {
@@ -434,46 +690,68 @@ function validateQuestions(questions, betweenGap) {
   }
 
   const sum = round1(questions.reduce((a, q) => a + (Number.isFinite(q.point) ? q.point : 0), 0));
-  if (Math.abs(sum - 100) >= 0.05) {
-    const diff = round1(100 - sum);
+  if (Math.abs(sum - TOTAL_SCORE) >= 0.05) {
+    const diff = round1(TOTAL_SCORE - sum);
     const dir = diff > 0 ? `${diff.toFixed(1)}점 더 필요` : `${Math.abs(diff).toFixed(1)}점 줄여야 함`;
-    issues.push(`총점 ${sum.toFixed(1)}점 — 100.0점이 되도록 ${dir}`);
+    issues.push(`총점 ${sum.toFixed(1)}점 — ${TOTAL_SCORE.toFixed(1)}점이 되도록 ${dir}`);
   }
 
-  const byTier = { 상: [], 중: [], 하: [] };
+  const byPart = new Map();
   questions.forEach((q, i) => {
-    if (Number.isFinite(q.point) && q.point > 0) byTier[q.tier].push({ point: q.point, num: i + 1 });
+    if (!byPart.has(q.partId)) {
+      byPart.set(q.partId, {
+        label: q.partLabel,
+        byTier: { 상: [], 중: [], 하: [] },
+        sum: 0,
+      });
+    }
+    const part = byPart.get(q.partId);
+    if (Number.isFinite(q.point) && q.point > 0) {
+      part.byTier[q.tier].push({ point: q.point, num: i + 1 });
+      part.sum = round1(part.sum + q.point);
+    }
   });
 
-  if (byTier.상.length && byTier.중.length) {
-    const minH = Math.min(...byTier.상.map((x) => x.point));
-    const maxM = Math.max(...byTier.중.map((x) => x.point));
-    if (minH <= maxM) {
-      issues.push("중 난이도 최고 배점이 상 난이도 최저 배점 이상입니다. (상 > 중 필요)");
-    } else if (round1(minH - maxM) < betweenGap - 0.01) {
-      issues.push(`상·중 사이 간격이 ${betweenGap.toFixed(1)}점 미만입니다.`);
+  byPart.forEach((part, partId) => {
+    const target = partTargets[partId];
+    const betweenGap = partGaps[partId];
+    if (Number.isFinite(target) && Math.abs(part.sum - target) >= 0.05) {
+      const diff = round1(target - part.sum);
+      const dir = diff > 0 ? `${diff.toFixed(1)}점 더 필요` : `${Math.abs(diff).toFixed(1)}점 줄여야 함`;
+      issues.push(`${part.label} 소계 ${part.sum.toFixed(1)}점 — 목표 ${target.toFixed(1)}점이 되도록 ${dir}`);
     }
-  }
 
-  if (byTier.중.length && byTier.하.length) {
-    const minM = Math.min(...byTier.중.map((x) => x.point));
-    const maxL = Math.max(...byTier.하.map((x) => x.point));
-    if (minM <= maxL) {
-      issues.push("하 난이도 최고 배점이 중 난이도 최저 배점 이상입니다. (중 > 하 필요)");
-    } else if (round1(minM - maxL) < betweenGap - 0.01) {
-      issues.push(`중·하 사이 간격이 ${betweenGap.toFixed(1)}점 미만입니다.`);
+    const byTier = part.byTier;
+    if (byTier.상.length && byTier.중.length) {
+      const minH = Math.min(...byTier.상.map((x) => x.point));
+      const maxM = Math.max(...byTier.중.map((x) => x.point));
+      if (minH <= maxM) {
+        issues.push(`${part.label}: 중 난이도 최고 배점이 상 난이도 최저 배점 이상입니다. (상 > 중 필요)`);
+      } else if (round1(minH - maxM) < betweenGap - 0.01) {
+        issues.push(`${part.label}: 상·중 사이 간격이 ${betweenGap.toFixed(1)}점 미만입니다.`);
+      }
     }
-  }
 
-  if (byTier.상.length && byTier.하.length && !byTier.중.length) {
-    const minH = Math.min(...byTier.상.map((x) => x.point));
-    const maxL = Math.max(...byTier.하.map((x) => x.point));
-    if (minH <= maxL) {
-      issues.push("하 난이도 최고 배점이 상 난이도 최저 배점 이상입니다. (상 > 하 필요)");
-    } else if (round1(minH - maxL) < betweenGap - 0.01) {
-      issues.push(`상·하 사이 간격이 ${betweenGap.toFixed(1)}점 미만입니다.`);
+    if (byTier.중.length && byTier.하.length) {
+      const minM = Math.min(...byTier.중.map((x) => x.point));
+      const maxL = Math.max(...byTier.하.map((x) => x.point));
+      if (minM <= maxL) {
+        issues.push(`${part.label}: 하 난이도 최고 배점이 중 난이도 최저 배점 이상입니다. (중 > 하 필요)`);
+      } else if (round1(minM - maxL) < betweenGap - 0.01) {
+        issues.push(`${part.label}: 중·하 사이 간격이 ${betweenGap.toFixed(1)}점 미만입니다.`);
+      }
     }
-  }
+
+    if (byTier.상.length && byTier.하.length && !byTier.중.length) {
+      const minH = Math.min(...byTier.상.map((x) => x.point));
+      const maxL = Math.max(...byTier.하.map((x) => x.point));
+      if (minH <= maxL) {
+        issues.push(`${part.label}: 하 난이도 최고 배점이 상 난이도 최저 배점 이상입니다. (상 > 하 필요)`);
+      } else if (round1(minH - maxL) < betweenGap - 0.01) {
+        issues.push(`${part.label}: 상·하 사이 간격이 ${betweenGap.toFixed(1)}점 미만입니다.`);
+      }
+    }
+  });
 
   return { ok: issues.length === 0, issues, sum };
 }
@@ -484,6 +762,7 @@ function renderEditor() {
     .map(
       (q, i) => `
     <tr data-index="${i}">
+      <td>${q.partLabel}</td>
       <td>${i + 1}</td>
       <td>
         <select class="tier-input tier-input-${TIER_KEYS[q.tier]}" data-index="${i}">
@@ -523,19 +802,45 @@ function onEditorTierChange(e) {
   updateEditorValidation();
 }
 
+function renderEditorGroupSummaryHtml(questions) {
+  const parts = [];
+  for (const q of questions) {
+    let part = parts.find((p) => p.id === q.partId);
+    if (!part) {
+      part = { id: q.partId, label: q.partLabel, questions: [] };
+      parts.push(part);
+    }
+    part.questions.push(q);
+  }
+
+  return parts
+    .map((part) => {
+      const subtotal = round1(part.questions.reduce((sum, q) => sum + q.point, 0));
+      return `
+        <div class="editor-part-summary">
+          <div class="part-result-head">
+            <strong>${part.label}</strong>
+            <span>소계 ${subtotal.toFixed(1)}점</span>
+          </div>
+          ${renderGroupSummaryHtml(summarizeByGroups(part.questions))}
+        </div>`;
+    })
+    .join("");
+}
+
 function updateEditorValidation() {
-  const validation = validateQuestions(state.selectedQuestions, state.betweenGap);
+  const validation = validateQuestions(state.selectedQuestions, state.partTargets, state.partGaps);
   const panel = document.getElementById("validation-panel");
   const groupsEl = document.getElementById("editor-groups");
 
   panel.className = validation.ok ? "validation-panel ok" : "validation-panel err";
   panel.innerHTML = validation.ok
-    ? `<div class="validation-status">검증 통과</div><div class="validation-detail">총점 ${validation.sum.toFixed(1)}점 · 상>중>하 · 난이도 간 간격 충족</div>`
+    ? `<div class="validation-status">검증 통과</div><div class="validation-detail">총점 ${validation.sum.toFixed(1)}점 · 유형별 목표 점수 · 상>중>하 · 난이도 간 간격 충족</div>`
     : `<div class="validation-status">검증 미통과</div><ul class="validation-issues">${validation.issues.map((x) => `<li>${x}</li>`).join("")}</ul>`;
 
   const validQuestions = state.selectedQuestions.filter((q) => Number.isFinite(q.point) && q.point > 0);
   if (validQuestions.length) {
-    groupsEl.innerHTML = renderGroupSummaryHtml(summarizeByGroups(validQuestions));
+    groupsEl.innerHTML = renderEditorGroupSummaryHtml(validQuestions);
   } else {
     groupsEl.innerHTML = "";
   }
@@ -566,24 +871,27 @@ function formatExportFilename() {
 
 function buildExportRows() {
   const questions = state.selectedQuestions;
-  const validation = validateQuestions(questions, state.betweenGap);
+  const validation = validateQuestions(questions, state.partTargets, state.partGaps);
   const label = document.getElementById("selected-label").textContent || "";
   const sum = round1(questions.reduce((a, q) => a + (Number.isFinite(q.point) ? q.point : 0), 0));
-  const groupSummary = summarizeByGroups(
-    questions.filter((q) => Number.isFinite(q.point) && q.point > 0)
-  );
+  const validQuestions = questions.filter((q) => Number.isFinite(q.point) && q.point > 0);
+  const partIds = [...new Set(validQuestions.map((q) => q.partId))];
 
   const rows = [
     ["선택 안", label],
     ["총 문항 수", questions.length],
     ["총 배점", `${sum.toFixed(1)}점`],
-    ["난이도 간 간격", `${state.betweenGap}점`],
+    ["유형별 목표", partIds.map((partId) => {
+      const sample = validQuestions.find((q) => q.partId === partId);
+      return `${sample.partLabel} ${state.partTargets[partId].toFixed(1)}점`;
+    }).join(" / ")],
     [],
-    ["문항", "난이도", "배점"],
+    ["유형", "문항", "난이도", "배점"],
   ];
 
   questions.forEach((q, i) => {
     rows.push([
+      q.partLabel,
       i + 1,
       q.tier,
       Number.isFinite(q.point) ? q.point : "",
@@ -591,11 +899,15 @@ function buildExportRows() {
   });
 
   rows.push([]);
-  rows.push(["난이도별 배점 요약"]);
-  rows.push(["난이도", "문항 수", "소계", "배점 구성"]);
+  rows.push(["유형·난이도별 배점 요약"]);
+  rows.push(["유형", "난이도", "문항 수", "소계", "배점 구성"]);
 
-  for (const g of groupSummary) {
-    rows.push([g.tier, g.count, g.subtotal, g.groupText]);
+  for (const partId of partIds) {
+    const partQuestions = validQuestions.filter((q) => q.partId === partId);
+    const partLabel = partQuestions[0].partLabel;
+    for (const g of summarizeByGroups(partQuestions)) {
+      rows.push([partLabel, g.tier, g.count, g.subtotal, g.groupText]);
+    }
   }
 
   rows.push([]);
@@ -621,7 +933,7 @@ function exportToExcel() {
 
   const rows = buildExportRows();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 48 }];
+  ws["!cols"] = [{ wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 48 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "배점표");
@@ -638,7 +950,7 @@ function onExportClick() {
 
 function onCalculate() {
   const input = readInputs();
-  const baseErr = validateInput(input, input.groupCounts, input.betweenGap);
+  const baseErr = validateFullInput(input);
   const errorEl = document.getElementById("error-msg");
 
   if (baseErr) {
@@ -654,10 +966,22 @@ function onCalculate() {
   renderProposals(state.variants);
 }
 
-["total", "count-high", "count-mid", "count-low"].forEach((id) => {
+[
+  "total",
+  "count-high",
+  "count-mid",
+  "count-low",
+  "choice-score-total",
+  "written-score-total",
+  "written-total",
+  "written-count-high",
+  "written-count-mid",
+  "written-count-low",
+].forEach((id) => {
   document.getElementById(id).addEventListener("input", updateSumStatus);
 });
 
+document.getElementById("written-enabled").addEventListener("change", updateSumStatus);
 document.getElementById("calculate-btn").addEventListener("click", onCalculate);
 document.getElementById("back-btn").addEventListener("click", backToProposals);
 document.getElementById("export-btn").addEventListener("click", onExportClick);

@@ -4,6 +4,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
   background: #f0f4f8;
@@ -104,6 +108,51 @@ header h1 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+}
+
+.checkbox-field {
+  padding: 0.75rem;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
+.score-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.score-split .sum-status {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.written-options {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #fffaf0;
+  border: 1px solid #fbd38d;
+  border-radius: 10px;
+}
+
+.written-options h3 {
+  font-size: 1rem;
+  color: #744210;
+  margin-bottom: 1rem;
 }
 
 .options-panel {
@@ -243,6 +292,40 @@ header h1 {
 .proposal-summary .tier-summary {
   margin-top: 0.5rem;
   margin-bottom: 0;
+}
+
+.part-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.part-result,
+.editor-part-summary {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.part-result-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+  color: #2d3748;
+  margin-bottom: 0.25rem;
+}
+
+.part-result-head span {
+  font-size: 0.85rem;
+  color: #718096;
+}
+
+.part-result .proposal-groups,
+.editor-part-summary .proposal-groups {
+  margin-top: 0.5rem;
 }
 
 .proposal-groups {
@@ -479,6 +562,7 @@ th {
 @media (max-width: 560px) {
   .difficulty-counts,
   .anchors,
+  .score-split,
   .options-grid,
   .options-grid.group-counts {
     grid-template-columns: 1fr;
