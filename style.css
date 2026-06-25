@@ -481,7 +481,8 @@ header h1 {
 .editor-table .tier-input-mid  { color: #b7791f; border-left: 3px solid #d69e2e; }
 .editor-table .tier-input-low  { color: #276749; border-left: 3px solid #38a169; }
 
-.editor-table tbody tr[draggable="true"] {
+.editor-table tbody tr[draggable="true"],
+.drag-source-cell {
   cursor: grab;
 }
 
@@ -501,11 +502,7 @@ header h1 {
   background: #fff5f5;
 }
 
-.drag-cell {
-  width: 3.5rem;
-  text-align: center;
-  color: #718096;
-  font-weight: 700;
+.drag-source-cell {
   user-select: none;
 }
 

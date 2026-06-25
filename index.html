@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>고등학교 시험 배점 추천기</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=drag-swap-row">
 </head>
 <body>
   <div class="container">
@@ -183,7 +183,6 @@
         <table class="editor-table">
           <thead>
             <tr>
-              <th>이동</th>
               <th>유형</th>
               <th>문항</th>
               <th>난이도 (수정 가능)</th>
@@ -194,7 +193,7 @@
         </table>
       </div>
 
-      <p class="disclaimer">배점을 수정하거나 같은 유형 안에서 행을 드래그해 난이도·배점을 바꾸면 위 검증 결과가 즉시 갱신됩니다.</p>
+      <p class="disclaimer">배점을 수정하거나 같은 유형 안에서 유형/문항 칸을 드래그해 난이도·배점을 바꾸면 위 검증 결과가 즉시 갱신됩니다.</p>
       <div class="bottom-actions">
         <button type="button" id="export-bottom-btn" class="secondary-btn">엑셀로 내보내기</button>
       </div>
@@ -202,7 +201,7 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=drag-swap-row"></script>
 </body>
 </html>
 

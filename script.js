@@ -801,9 +801,8 @@ function renderEditor() {
     .map(
       (q, i) => `
     <tr data-index="${i}" draggable="true">
-      <td class="drag-cell" title="같은 유형 안에서 드래그해 난이도와 배점을 바꿉니다.">↕</td>
-      <td>${q.partLabel}</td>
-      <td>${i + 1}</td>
+      <td class="drag-source-cell" title="같은 유형의 다른 문항으로 드래그하면 난이도와 배점이 바뀝니다.">${q.partLabel}</td>
+      <td class="drag-source-cell" title="같은 유형의 다른 문항으로 드래그하면 난이도와 배점이 바뀝니다.">${i + 1}</td>
       <td>
         <select class="tier-input tier-input-${TIER_KEYS[q.tier]}" data-index="${i}">
           ${DISPLAY_TIER_ORDER.map(
@@ -830,6 +829,10 @@ function renderEditor() {
     row.addEventListener("dragleave", onEditorDragLeave);
     row.addEventListener("drop", onEditorDrop);
     row.addEventListener("dragend", onEditorDragEnd);
+    row.addEventListener("pointerdown", onEditorPointerDown);
+    row.addEventListener("pointerenter", onEditorPointerEnter);
+    row.addEventListener("pointerleave", onEditorPointerLeave);
+    row.addEventListener("pointerup", onEditorPointerUp);
   });
 
   updateEditorValidation();
@@ -894,6 +897,42 @@ function onEditorDrop(e) {
 }
 
 function onEditorDragEnd() {
+  state.dragSourceIndex = null;
+  clearEditorDragClasses();
+}
+
+function onEditorPointerDown(e) {
+  if (e.button !== 0 || e.target.closest("input, select")) return;
+
+  const row = e.currentTarget;
+  state.dragSourceIndex = parseInt(row.dataset.index, 10);
+  row.classList.add("dragging");
+  e.preventDefault();
+}
+
+function onEditorPointerEnter(e) {
+  if (state.dragSourceIndex === null || e.buttons !== 1) return;
+
+  const targetIndex = parseInt(e.currentTarget.dataset.index, 10);
+  const allowed = isEditorSwapAllowed(state.dragSourceIndex, targetIndex);
+  e.currentTarget.classList.toggle("drop-allowed", allowed);
+  e.currentTarget.classList.toggle("drop-blocked", !allowed);
+}
+
+function onEditorPointerLeave(e) {
+  e.currentTarget.classList.remove("drop-allowed", "drop-blocked");
+}
+
+function onEditorPointerUp(e) {
+  const targetIndex = parseInt(e.currentTarget.dataset.index, 10);
+
+  if (isEditorSwapAllowed(state.dragSourceIndex, targetIndex)) {
+    swapQuestionScoring(state.dragSourceIndex, targetIndex);
+    state.dragSourceIndex = null;
+    renderEditor();
+    return;
+  }
+
   state.dragSourceIndex = null;
   clearEditorDragClasses();
 }
@@ -1107,4 +1146,11 @@ document.getElementById("calculate-btn").addEventListener("click", onCalculate);
 document.getElementById("back-btn").addEventListener("click", backToProposals);
 document.getElementById("export-btn").addEventListener("click", onExportClick);
 document.getElementById("export-bottom-btn").addEventListener("click", onExportClick);
+if (typeof document.addEventListener === "function") {
+  document.addEventListener("pointerup", () => {
+    if (state.dragSourceIndex === null) return;
+    state.dragSourceIndex = null;
+    clearEditorDragClasses();
+  });
+}
 updateSumStatus();
